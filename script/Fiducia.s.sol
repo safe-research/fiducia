@@ -12,7 +12,9 @@ contract FiduciaScript is Script {
     function run() public {
         vm.startBroadcast();
 
-        fiducia = new Fiducia();
+        uint256 delay = 0; // Set the delay as needed
+
+        fiducia = new Fiducia(delay);
 
         vm.stopBroadcast();
     }
