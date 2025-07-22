@@ -313,13 +313,10 @@ contract Fiducia is ITransactionGuard, IModuleGuard {
         uint256 amount;
         TokenTransferInfo memory tokenTransferInfo = TokenTransferInfo(0, 0);
 
-        if (selector == IERC20.transfer.selector) {
-            try this._decodeTransferData(data[4:]) returns (address _recipient, uint256 _amount) {
-                recipient = _recipient;
-                amount = _amount;
-                tokenIdentifier = keccak256(abi.encode(to, recipient, selector, operation));
-                tokenTransferInfo = allowedTokenTxInfos[safe][tokenIdentifier];
-            } catch {}
+        if (selector == IERC20.transfer.selector && data.length >= 68) {
+            (recipient, amount) = abi.decode(data[4:], (address, uint256));
+            tokenIdentifier = keccak256(abi.encode(to, recipient, selector, operation));
+            tokenTransferInfo = allowedTokenTxInfos[safe][tokenIdentifier];
         }
 
         if (tokenTransferInfo.maxAmount > 0) {
@@ -345,16 +342,6 @@ contract Fiducia is ITransactionGuard, IModuleGuard {
         }
 
         revert FirstTimeTx();
-    }
-
-    /**
-     * @notice Function to decode transfer data.
-     * @param data The data payload of the transfer transaction.
-     * @return recipient The address of the recipient.
-     * @return amount The amount of tokens to transfer.
-     */
-    function _decodeTransferData(bytes calldata data) external pure returns (address recipient, uint256 amount) {
-        return abi.decode(data, (address, uint256));
     }
 
     /**
