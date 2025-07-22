@@ -304,6 +304,10 @@ contract FiduciaTest is Test {
             getExecutorSignature(owner)
         );
 
+        // Setting MultiSendCallOnly as allowed transaction
+        vm.prank(address(safe));
+        fiducia.setAllowedTx(multiSendLibrary, MultiSendCallOnly.multiSend.selector, Enum.Operation.DelegateCall, false);
+
         // Wait for delay
         vm.warp(block.timestamp + DELAY + 1);
 
@@ -391,6 +395,10 @@ contract FiduciaTest is Test {
             payable(zeroAddress),
             getExecutorSignature(owner)
         );
+
+        // Setting MultiSendCallOnly as allowed transaction
+        vm.prank(address(safe));
+        fiducia.setAllowedTx(multiSendLibrary, MultiSendCallOnly.multiSend.selector, Enum.Operation.DelegateCall, false);
 
         // Wait for delay
         vm.warp(block.timestamp + DELAY + 1);
@@ -534,6 +542,10 @@ contract FiduciaTest is Test {
         uint256 transferAmount = 50e12;
         uint256 maxAmount = 100e12;
 
+        // Setting MultiSendCallOnly as allowed transaction
+        vm.prank(address(safe));
+        fiducia.setAllowedTx(address(testToken), testToken.transfer.selector, Enum.Operation.Call, false);
+
         // Set token transfer allowance
         vm.prank(address(safe));
         fiducia.setAllowedTokenTransfer(address(testToken), recipient, maxAmount, false);
@@ -570,6 +582,10 @@ contract FiduciaTest is Test {
     function testTokenTransferExceedsLimit() public {
         uint256 transferAmount = 150e12;
         uint256 maxAmount = 100e12;
+
+        // Setting MultiSendCallOnly as allowed transaction
+        vm.prank(address(safe));
+        fiducia.setAllowedTx(address(testToken), testToken.transfer.selector, Enum.Operation.Call, false);
 
         // Set token transfer allowance
         vm.prank(address(safe));
@@ -622,6 +638,7 @@ contract FiduciaTest is Test {
             getExecutorSignature(owner)
         );
 
+        // Setup guard
         setupGuard();
 
         // Allow a transaction through module
@@ -904,6 +921,11 @@ contract FiduciaTest is Test {
      * @dev Test token transfer not allowed revert
      */
     function testRevertTokenTransferNotAllowed() public {
+        // Setting MultiSendCallOnly as allowed transaction
+        vm.prank(address(safe));
+        fiducia.setAllowedTx(address(testToken), testToken.transfer.selector, Enum.Operation.Call, false);
+
+        // Setup guard
         setupGuard();
 
         // Try token transfer without allowance
