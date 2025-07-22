@@ -313,7 +313,7 @@ contract Fiducia is ITransactionGuard, IModuleGuard {
         uint256 amount;
         TokenTransferInfo memory tokenTransferInfo = TokenTransferInfo(0, 0);
 
-        if (selector == IERC20.transfer.selector && data.length >= 68) {
+        if (selector == IERC20.transfer.selector && data.length > 67) {
             (recipient, amount) = abi.decode(data[4:], (address, uint256));
             tokenIdentifier = keccak256(abi.encode(to, recipient, selector, operation));
             tokenTransferInfo = allowedTokenTxInfos[safe][tokenIdentifier];
