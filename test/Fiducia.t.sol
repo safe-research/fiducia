@@ -237,7 +237,7 @@ contract FiduciaTest is Test {
      */
     function testImmediateTxExecutionWithCosigner() public {
         // Set cosigner first
-        bytes memory setCosignerData = abi.encodeWithSelector(fiducia.setCosigner.selector, cosigner);
+        bytes memory setCosignerData = abi.encodeWithSelector(fiducia.setCosigner.selector, cosigner, false);
         vm.prank(owner);
         safe.execTransaction(
             address(fiducia),
@@ -429,7 +429,7 @@ contract FiduciaTest is Test {
         vm.prank(address(safe));
         vm.expectEmit(true, true, false, true);
         emit Fiducia.TxAllowed(address(safe), recipient, bytes4(0), Enum.Operation.Call, block.timestamp);
-        fiducia.setAllowedTx(recipient, bytes4(0), Enum.Operation.Call);
+        fiducia.setAllowedTx(recipient, bytes4(0), Enum.Operation.Call, false);
 
         // Should be immediately allowed
         bytes32 txId = keccak256(abi.encode(recipient, bytes4(0), Enum.Operation.Call));
@@ -445,7 +445,7 @@ contract FiduciaTest is Test {
         vm.prank(address(safe));
         vm.expectEmit(true, true, false, true);
         emit Fiducia.TxAllowed(address(safe), recipient, bytes4(0), Enum.Operation.Call, block.timestamp + DELAY);
-        fiducia.setAllowedTx(recipient, bytes4(0), Enum.Operation.Call);
+        fiducia.setAllowedTx(recipient, bytes4(0), Enum.Operation.Call, false);
 
         // Should be allowed after delay
         bytes32 txId = keccak256(abi.encode(recipient, bytes4(0), Enum.Operation.Call));
@@ -463,7 +463,7 @@ contract FiduciaTest is Test {
         vm.prank(address(safe));
         vm.expectEmit(true, true, false, true);
         emit Fiducia.CosignerSet(address(safe), cosigner, block.timestamp);
-        fiducia.setCosigner(cosigner);
+        fiducia.setCosigner(cosigner, false);
 
         (uint256 activeFrom, address cosignerAddr) = fiducia.cosignerInfos(address(safe));
         assertEq(activeFrom, block.timestamp);
@@ -479,7 +479,7 @@ contract FiduciaTest is Test {
         vm.prank(address(safe));
         vm.expectEmit(true, true, false, true);
         emit Fiducia.CosignerSet(address(safe), cosigner, block.timestamp + DELAY);
-        fiducia.setCosigner(cosigner);
+        fiducia.setCosigner(cosigner, false);
 
         (uint256 activeFrom, address cosignerAddr) = fiducia.cosignerInfos(address(safe));
         assertEq(activeFrom, block.timestamp + DELAY);
@@ -499,7 +499,7 @@ contract FiduciaTest is Test {
         vm.prank(address(safe));
         vm.expectEmit(true, true, true, true);
         emit Fiducia.TokenTransferAllowed(address(safe), address(testToken), recipient, maxAmount, block.timestamp);
-        fiducia.setAllowedTokenTransfer(address(testToken), recipient, maxAmount);
+        fiducia.setAllowedTokenTransfer(address(testToken), recipient, maxAmount, false);
 
         bytes32 tokenId = keccak256(abi.encode(address(testToken), recipient));
         (uint256 activeFrom, uint256 storedMaxAmount) = fiducia.allowedTokenTxInfos(address(safe), tokenId);
@@ -519,7 +519,7 @@ contract FiduciaTest is Test {
         emit Fiducia.TokenTransferAllowed(
             address(safe), address(testToken), recipient, maxAmount, block.timestamp + DELAY
         );
-        fiducia.setAllowedTokenTransfer(address(testToken), recipient, maxAmount);
+        fiducia.setAllowedTokenTransfer(address(testToken), recipient, maxAmount, false);
 
         bytes32 tokenId = keccak256(abi.encode(address(testToken), recipient));
         (uint256 activeFrom, uint256 storedMaxAmount) = fiducia.allowedTokenTxInfos(address(safe), tokenId);
@@ -536,7 +536,7 @@ contract FiduciaTest is Test {
 
         // Set token transfer allowance
         vm.prank(address(safe));
-        fiducia.setAllowedTokenTransfer(address(testToken), recipient, maxAmount);
+        fiducia.setAllowedTokenTransfer(address(testToken), recipient, maxAmount, false);
 
         // Setup guard
         setupGuard();
@@ -573,7 +573,7 @@ contract FiduciaTest is Test {
 
         // Set token transfer allowance
         vm.prank(address(safe));
-        fiducia.setAllowedTokenTransfer(address(testToken), recipient, maxAmount);
+        fiducia.setAllowedTokenTransfer(address(testToken), recipient, maxAmount, false);
 
         // Setup guard
         setupGuard();
@@ -626,7 +626,7 @@ contract FiduciaTest is Test {
 
         // Allow a transaction through module
         vm.prank(address(safe));
-        fiducia.setAllowedTx(recipient, bytes4(0), Enum.Operation.Call);
+        fiducia.setAllowedTx(recipient, bytes4(0), Enum.Operation.Call, false);
 
         // Wait for allowance to be active
         vm.warp(block.timestamp + DELAY + 1);
@@ -694,6 +694,165 @@ contract FiduciaTest is Test {
             payable(zeroAddress),
             getExecutorSignature(owner)
         );
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                            RESET TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    /**
+     * @dev Test resetting allowed transaction without guard setup
+     */
+    function testResetAllowedTxNoGuard() public {
+        // First set the allowed transaction
+        vm.prank(address(safe));
+        fiducia.setAllowedTx(recipient, bytes4(0), Enum.Operation.Call, false);
+
+        bytes32 txId = keccak256(abi.encode(recipient, bytes4(0), Enum.Operation.Call));
+        // Verify it was set with current timestamp
+        assertEq(fiducia.allowedTx(address(safe), txId), block.timestamp);
+
+        // Now reset it
+        vm.prank(address(safe));
+        vm.expectEmit(true, true, false, true);
+        emit Fiducia.TxAllowed(address(safe), recipient, bytes4(0), Enum.Operation.Call, 0);
+        fiducia.setAllowedTx(recipient, bytes4(0), Enum.Operation.Call, true);
+
+        // Verify it was reset to 0
+        assertEq(fiducia.allowedTx(address(safe), txId), 0);
+    }
+
+    /**
+     * @dev Test resetting allowed transaction with guard setup
+     */
+    function testResetAllowedTxWithGuard() public {
+        setupGuard();
+
+        // First set the allowed transaction
+        vm.prank(address(safe));
+        fiducia.setAllowedTx(recipient, bytes4(0), Enum.Operation.Call, false);
+
+        bytes32 txId = keccak256(abi.encode(recipient, bytes4(0), Enum.Operation.Call));
+        // Verify it was set with delay
+        assertEq(fiducia.allowedTx(address(safe), txId), block.timestamp + DELAY);
+
+        // Now reset it
+        vm.prank(address(safe));
+        vm.expectEmit(true, true, false, true);
+        emit Fiducia.TxAllowed(address(safe), recipient, bytes4(0), Enum.Operation.Call, 0);
+        fiducia.setAllowedTx(recipient, bytes4(0), Enum.Operation.Call, true);
+
+        // Verify it was reset to 0
+        assertEq(fiducia.allowedTx(address(safe), txId), 0);
+    }
+
+    /**
+     * @dev Test resetting cosigner without guard setup
+     */
+    function testResetCosignerNoGuard() public {
+        // First set the cosigner
+        vm.prank(address(safe));
+        fiducia.setCosigner(cosigner, false);
+
+        (uint256 activeFrom, address cosignerAddr) = fiducia.cosignerInfos(address(safe));
+        // Verify it was set with current timestamp
+        assertEq(activeFrom, block.timestamp);
+        assertEq(cosignerAddr, cosigner);
+
+        // Now reset it
+        vm.prank(address(safe));
+        vm.expectEmit(true, true, false, true);
+        emit Fiducia.CosignerSet(address(safe), cosigner, 0);
+        fiducia.setCosigner(cosigner, true);
+
+        (activeFrom, cosignerAddr) = fiducia.cosignerInfos(address(safe));
+        // Verify it was reset to 0 but cosigner address remains
+        assertEq(activeFrom, 0);
+        assertEq(cosignerAddr, cosigner);
+    }
+
+    /**
+     * @dev Test resetting cosigner with guard setup
+     */
+    function testResetCosignerWithGuard() public {
+        setupGuard();
+
+        // First set the cosigner
+        vm.prank(address(safe));
+        fiducia.setCosigner(cosigner, false);
+
+        (uint256 activeFrom, address cosignerAddr) = fiducia.cosignerInfos(address(safe));
+        // Verify it was set with delay
+        assertEq(activeFrom, block.timestamp + DELAY);
+        assertEq(cosignerAddr, cosigner);
+
+        // Now reset it
+        vm.prank(address(safe));
+        vm.expectEmit(true, true, false, true);
+        emit Fiducia.CosignerSet(address(safe), cosigner, 0);
+        fiducia.setCosigner(cosigner, true);
+
+        (activeFrom, cosignerAddr) = fiducia.cosignerInfos(address(safe));
+        // Verify it was reset to 0 but cosigner address remains
+        assertEq(activeFrom, 0);
+        assertEq(cosignerAddr, cosigner);
+    }
+
+    /**
+     * @dev Test resetting allowed token transfer without guard setup
+     */
+    function testResetAllowedTokenTransferNoGuard() public {
+        uint256 maxAmount = 100e12;
+
+        // First set the token transfer allowance
+        vm.prank(address(safe));
+        fiducia.setAllowedTokenTransfer(address(testToken), recipient, maxAmount, false);
+
+        bytes32 tokenId = keccak256(abi.encode(address(testToken), recipient));
+        (uint256 activeFrom, uint256 storedMaxAmount) = fiducia.allowedTokenTxInfos(address(safe), tokenId);
+        // Verify it was set with current timestamp
+        assertEq(activeFrom, block.timestamp);
+        assertEq(storedMaxAmount, maxAmount);
+
+        // Now reset it
+        vm.prank(address(safe));
+        vm.expectEmit(true, true, true, true);
+        emit Fiducia.TokenTransferAllowed(address(safe), address(testToken), recipient, maxAmount, 0);
+        fiducia.setAllowedTokenTransfer(address(testToken), recipient, maxAmount, true);
+
+        (activeFrom, storedMaxAmount) = fiducia.allowedTokenTxInfos(address(safe), tokenId);
+        // Verify it was reset to 0 but amount remains
+        assertEq(activeFrom, 0);
+        assertEq(storedMaxAmount, maxAmount);
+    }
+
+    /**
+     * @dev Test resetting allowed token transfer with guard setup
+     */
+    function testResetAllowedTokenTransferWithGuard() public {
+        setupGuard();
+        uint256 maxAmount = 100e12;
+
+        // First set the token transfer allowance
+        vm.prank(address(safe));
+        fiducia.setAllowedTokenTransfer(address(testToken), recipient, maxAmount, false);
+
+        bytes32 tokenId = keccak256(abi.encode(address(testToken), recipient));
+        (uint256 activeFrom, uint256 storedMaxAmount) = fiducia.allowedTokenTxInfos(address(safe), tokenId);
+        // Verify it was set with delay
+        assertEq(activeFrom, block.timestamp + DELAY);
+        assertEq(storedMaxAmount, maxAmount);
+
+        // Now reset it
+        vm.prank(address(safe));
+        vm.expectEmit(true, true, true, true);
+        emit Fiducia.TokenTransferAllowed(address(safe), address(testToken), recipient, maxAmount, 0);
+        fiducia.setAllowedTokenTransfer(address(testToken), recipient, maxAmount, true);
+
+        (activeFrom, storedMaxAmount) = fiducia.allowedTokenTxInfos(address(safe), tokenId);
+        // Verify it was reset to 0 but amount remains
+        assertEq(activeFrom, 0);
+        assertEq(storedMaxAmount, maxAmount);
     }
 
     /*//////////////////////////////////////////////////////////////
