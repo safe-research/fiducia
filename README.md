@@ -194,3 +194,8 @@ forge test --match-test test_GuardSetup -vv
 1. Valid cosigner signatures (if enabled)
 2. Waiting for delay periods
 3. Following allowed transaction patterns
+
+## Improvements
+
+- Support for `ERC20.transferFrom`
+- Can have limit of tokens which can be transferred within a timeframe.

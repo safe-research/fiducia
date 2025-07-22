@@ -31,7 +31,6 @@ contract Fiducia is ITransactionGuard, IModuleGuard {
      * @param activeFrom The timestamp from which the token transfer is considered allowed.
      * @param maxAmount The maximum amount of tokens that can be transferred in a single transaction.
      * @dev This struct is used to manage token transfers and their limits.
-     *      IMPROVEMENT: Can have limit of tokens which can be transferred within a timeframe in next version.
      */
     struct TokenTransferInfo {
         uint256 activeFrom;
@@ -258,7 +257,6 @@ contract Fiducia is ITransactionGuard, IModuleGuard {
             }
             return;
         } else if (selector == IERC20.transfer.selector) {
-            // IMPROVEMENT: Support for IERC20.transferFrom
             (address recipient, uint256 amount) = abi.decode(data[4:], (address, uint256));
             bytes32 tokenId = keccak256(abi.encode(to, recipient));
             TokenTransferInfo memory tokenTransferInfo = allowedTokenTxInfos[safe][tokenId];
