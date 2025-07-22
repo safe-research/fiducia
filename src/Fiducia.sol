@@ -422,14 +422,12 @@ contract Fiducia is ITransactionGuard, IModuleGuard {
         }
     }
 
-    function _checkGuardsSet() internal view returns (bool set) {
+    function _checkGuardsSet() internal view virtual returns (bool set) {
         SafeInterface safe = SafeInterface(payable(msg.sender));
         address guard = abi.decode(safe.getStorageAt(GUARD_STORAGE_SLOT, 1), (address));
         address moduleGuard = abi.decode(safe.getStorageAt(MODULE_GUARD_STORAGE_SLOT, 1), (address));
 
-        if (guard == address(this) && moduleGuard == address(this)) {
-            set = true;
-        }
+        return guard == address(this) && moduleGuard == address(this);
     }
 
     /**
@@ -439,8 +437,8 @@ contract Fiducia is ITransactionGuard, IModuleGuard {
      * @param operation The operation type of the transaction.
      * @dev This function allows setting a transaction type that can be executed without delay.
      */
-    function setAllowedTx(address to, bytes4 selector, Enum.Operation operation) public {
-        uint256 allowedTimestamp = _checkGuardsSet() ? block.timestamp + DELAY : block.timestamp;
+    function setAllowedTx(address to, bytes4 selector, Enum.Operation operation, bool reset) public virtual {
+        uint256 allowedTimestamp = reset ? 0 : _checkGuardsSet() ? block.timestamp + DELAY : block.timestamp;
         bytes32 txId = keccak256(abi.encode(to, selector, operation));
         allowedTx[msg.sender][txId] = allowedTimestamp;
 
@@ -452,8 +450,8 @@ contract Fiducia is ITransactionGuard, IModuleGuard {
      * @param cosigner The address of the cosigner.
      * @dev This function allows setting a cosigner that can approve transactions without delay.
      */
-    function setCosigner(address cosigner) public {
-        uint256 allowedTimestamp = _checkGuardsSet() ? block.timestamp + DELAY : block.timestamp;
+    function setCosigner(address cosigner, bool reset) public virtual {
+        uint256 allowedTimestamp = reset ? 0 : _checkGuardsSet() ? block.timestamp + DELAY : block.timestamp;
         cosignerInfos[msg.sender] = CosignerInfo(allowedTimestamp, cosigner);
 
         emit CosignerSet(msg.sender, cosigner, allowedTimestamp);
@@ -466,8 +464,8 @@ contract Fiducia is ITransactionGuard, IModuleGuard {
      * @param maxAmount The maximum amount of tokens that can be transferred in a single transaction.
      * @dev This function allows setting a token transfer that can be executed without delay.
      */
-    function setAllowedTokenTransfer(address token, address to, uint256 maxAmount) public {
-        uint256 allowedTimestamp = _checkGuardsSet() ? block.timestamp + DELAY : block.timestamp;
+    function setAllowedTokenTransfer(address token, address to, uint256 maxAmount, bool reset) public virtual {
+        uint256 allowedTimestamp = reset ? 0 : _checkGuardsSet() ? block.timestamp + DELAY : block.timestamp;
         bytes32 tokenId = keccak256(abi.encode(token, to));
         allowedTokenTxInfos[msg.sender][tokenId] = TokenTransferInfo(allowedTimestamp, maxAmount);
 
