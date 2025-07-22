@@ -308,32 +308,53 @@ contract Fiducia is ITransactionGuard, IModuleGuard {
     function _checkTransaction(address safe, address to, bytes calldata data, Enum.Operation operation) internal {
         bytes4 selector = _decodeSelector(data);
         bytes32 txId = keccak256(abi.encode(to, selector, operation));
+        bytes32 tokenIdentifier;
+        address recipient;
+        uint256 amount;
+        TokenTransferInfo memory tokenTransferInfo = TokenTransferInfo(0, 0);
 
-        if (allowedTx[safe][txId] > 0 && allowedTx[safe][txId] <= block.timestamp) {
+        if (selector == IERC20.transfer.selector) {
+            try this._decodeTransferData(data[4:]) returns (address _recipient, uint256 _amount) {
+                recipient = _recipient;
+                amount = _amount;
+                tokenIdentifier = keccak256(abi.encode(to, recipient, selector, operation));
+                tokenTransferInfo = allowedTokenTxInfos[safe][tokenIdentifier];
+            } catch {}
+        }
+
+        if (tokenTransferInfo.maxAmount > 0) {
+            require(
+                tokenTransferInfo.activeFrom > 0 && tokenTransferInfo.activeFrom <= block.timestamp,
+                TokenTransferNotAllowed()
+            );
+            require(amount <= tokenTransferInfo.maxAmount, TokenTransferExceedsLimit());
+            return;
+        } else if (_setTransactions(to, selector, operation)) {
+            return;
+        } else if (_isGuardRemovalTransaction(safe, to, data)) {
+            return;
+        } else if (allowedTx[safe][txId] > 0 && allowedTx[safe][txId] <= block.timestamp) {
             if (selector == MultiSendCallOnly.multiSend.selector) {
                 bytes calldata transactions = _decodeMultiSendTransactions(data);
                 while (transactions.length > 0) {
                     (to, data, operation, transactions) = _decodeNextTransaction(transactions);
                     _checkTransaction(safe, to, data, operation);
                 }
-            } else if (selector == IERC20.transfer.selector) {
-                (address recipient, uint256 amount) = abi.decode(data[4:], (address, uint256));
-                bytes32 tokenId = keccak256(abi.encode(to, recipient));
-                TokenTransferInfo memory tokenTransferInfo = allowedTokenTxInfos[safe][tokenId];
-                require(
-                    tokenTransferInfo.activeFrom > 0 && tokenTransferInfo.activeFrom <= block.timestamp,
-                    TokenTransferNotAllowed()
-                );
-                require(amount <= tokenTransferInfo.maxAmount, TokenTransferExceedsLimit());
             }
-            return;
-        } else if (_setTransactions(to, selector, operation)) {
-            return;
-        } else if (_isGuardRemovalTransaction(safe, to, data)) {
             return;
         }
 
         revert FirstTimeTx();
+    }
+
+    /**
+     * @notice Function to decode transfer data.
+     * @param data The data payload of the transfer transaction.
+     * @return recipient The address of the recipient.
+     * @return amount The amount of tokens to transfer.
+     */
+    function _decodeTransferData(bytes calldata data) external pure returns (address recipient, uint256 amount) {
+        return abi.decode(data, (address, uint256));
     }
 
     /**
@@ -538,7 +559,7 @@ contract Fiducia is ITransactionGuard, IModuleGuard {
      */
     function setAllowedTokenTransfer(address token, address to, uint256 maxAmount, bool reset) public virtual {
         uint256 allowedTimestamp = reset ? 0 : _checkGuardsSet() ? block.timestamp + DELAY : block.timestamp;
-        bytes32 tokenId = keccak256(abi.encode(token, to));
+        bytes32 tokenId = keccak256(abi.encode(token, to, IERC20.transfer.selector, Enum.Operation.Call));
         allowedTokenTxInfos[msg.sender][tokenId] = TokenTransferInfo(allowedTimestamp, maxAmount);
 
         emit TokenTransferAllowed(msg.sender, token, to, maxAmount, allowedTimestamp);
