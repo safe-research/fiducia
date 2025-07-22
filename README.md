@@ -1,7 +1,7 @@
 # Fiducia 🛡️
 
 > [!WARNING]  
-> Code in this repository is not audited and may contain serious security vulnerabilities. Use at your own risk.
+> Code in this repository is not audited and may contain serious security holes. Use at your own risk.
 
 Fiducia is a comprehensive Safe transaction guard that adds enhanced security controls through time delays and cosigner requirements. It enforces stricter transaction validation while providing flexible permission management for Safe multisig wallets.
 
@@ -34,12 +34,8 @@ Fiducia implements both `ITransactionGuard` and `IModuleGuard` interfaces to pro
 ### Installation
 
 ```shell
-# Clone repository
-git clone https://github.com/safe-research/fiducia.git
+git clone --recurse-submodules https://github.com/safe-research/fiducia.git
 cd fiducia
-
-# Install dependencies  
-forge install
 ```
 
 ### Build

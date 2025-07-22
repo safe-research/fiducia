@@ -4,7 +4,7 @@ pragma solidity ^0.8.13;
 import {ITransactionGuard, IERC165} from "safe-smart-account/contracts/base/GuardManager.sol";
 import {IModuleGuard} from "safe-smart-account/contracts/base/ModuleManager.sol";
 import {Enum} from "safe-smart-account/contracts/libraries/Enum.sol";
-import {SafeInterface} from "./interfaces/SafeInterface.sol";
+import {ISafe} from "safe-smart-account/contracts/interfaces/ISafe.sol";
 import {MultiSendCallOnly} from "safe-smart-account/contracts/libraries/MultiSendCallOnly.sol";
 import {SignatureChecker} from "openzeppelin-contracts/contracts/utils/cryptography/SignatureChecker.sol";
 import {IERC20} from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
@@ -42,8 +42,7 @@ contract Fiducia is ITransactionGuard, IModuleGuard {
      * @dev This is used to check if the guard is set
      *      Value = `keccak256("guard_manager.guard.address")`
      */
-    uint256 public constant GUARD_STORAGE_SLOT =
-        uint256(0x4a204f620c8c5ccdca3fd54d003badd85ba500436a431f0cbda4f558c93c34c8);
+    uint256 public constant GUARD_STORAGE_SLOT = 0x4a204f620c8c5ccdca3fd54d003badd85ba500436a431f0cbda4f558c93c34c8;
 
     /**
      * @notice The storage slot for the module guard
@@ -51,7 +50,7 @@ contract Fiducia is ITransactionGuard, IModuleGuard {
      *      Value = `keccak256("module_manager.module_guard.address")`
      */
     uint256 public constant MODULE_GUARD_STORAGE_SLOT =
-        uint256(0xb104e0b93118902c651344349b610029d694cfdec91c589c91ebafbcd0289947);
+        0xb104e0b93118902c651344349b610029d694cfdec91c589c91ebafbcd0289947;
 
     /**
      * @notice The delay for the guard removal and delegate allowance.
@@ -89,20 +88,76 @@ contract Fiducia is ITransactionGuard, IModuleGuard {
      */
     mapping(address safe => CosignerInfo cosigner) public cosignerInfos;
 
+    /**
+     * @notice Event emitted when the guard removal is scheduled
+     * @param safe The address of the safe.
+     * @param timestamp The timestamp when the guard removal is scheduled.
+     */
     event GuardRemovalScheduled(address indexed safe, uint256 timestamp);
+
+    /**
+     * @notice Event emitted when a transaction is allowed
+     * @param safe The address of the safe.
+     * @param to The address the transaction is sent to.
+     * @param selector The function selector of the transaction.
+     * @param operation The operation type of the transaction.
+     * @param timestamp The timestamp when the transaction is allowed.
+     * @dev This event is emitted when a transaction is allowed by the guard or when allowance is reset.
+     */
     event TxAllowed(
         address indexed safe, address indexed to, bytes4 selector, Enum.Operation operation, uint256 timestamp
     );
+
+    /**
+     * @notice Event emitted when a cosigner is set
+     * @param safe The address of the safe.
+     * @param cosigner The address of the cosigner.
+     * @param activeFrom The timestamp from which the cosigner is considered active.
+     * @dev This event is emitted when a cosigner is set or reset.
+     */
     event CosignerSet(address indexed safe, address indexed cosigner, uint256 activeFrom);
+
+    /**
+     * @notice Event emitted when a token transfer is allowed
+     * @param safe The address of the safe.
+     * @param token The address of the token contract.
+     * @param to The address the tokens are sent to.
+     * @param amount The maximum amount of tokens that can be transferred in a single transaction.
+     * @param activeFrom The timestamp from which the token transfer is considered allowed.
+     * @dev This event is emitted when a token transfer is allowed or reset.
+     */
     event TokenTransferAllowed(
         address indexed safe, address indexed token, address indexed to, uint256 amount, uint256 activeFrom
     );
 
+    /**
+     * @notice Error thrown when the timestamp for guard removal is not passed or have scheduled.
+     */
     error InvalidTimestamp();
+
+    /**
+     * @notice Error thrown when a token transfer is not allowed.
+     */
     error TokenTransferNotAllowed();
+
+    /**
+     * @notice Error thrown when a token transfer exceeds the allowed limit.
+     */
     error TokenTransferExceedsLimit();
+
+    /**
+     * @notice Error thrown when a transaction is the first time it is being executed.
+     */
     error FirstTimeTx();
+
+    /**
+     * @notice Error thrown when the function selector is invalid.
+     */
     error InvalidSelector();
+
+    /**
+     * @notice Error thrown when the guard is not set up properly.
+     */
     error ImproperGuardSetup();
 
     /**
@@ -187,7 +242,7 @@ contract Fiducia is ITransactionGuard, IModuleGuard {
         bytes calldata signature
     ) internal returns (bool status) {
         // Compute the transaction hash. (Not same as Safe Tx Hash)
-        bytes32 safeTxHash = SafeInterface(payable(safe)).getTransactionHash(
+        bytes32 safeTxHash = ISafe(payable(safe)).getTransactionHash(
             to,
             value,
             data,
@@ -197,7 +252,7 @@ contract Fiducia is ITransactionGuard, IModuleGuard {
             0,
             address(0),
             address(0),
-            SafeInterface(payable(safe)).nonce() - 1 // The Guard check is executed post nonce increment, so we need to subtract 1 from the nonce.
+            ISafe(payable(safe)).nonce() - 1 // The Guard check is executed post nonce increment, so we need to subtract 1 from the nonce.
         );
         bytes32 txId = keccak256(abi.encode(to, _decodeSelector(data), operation));
 
@@ -233,6 +288,11 @@ contract Fiducia is ITransactionGuard, IModuleGuard {
         return signatures[end - length:end];
     }
 
+    /**
+     * @notice Internal function to return an empty context.
+     * @return An empty bytes calldata.
+     * @dev This function is used when no additional context is provided in the signatures.
+     */
     function _emptyContext() internal pure returns (bytes calldata) {
         return msg.data[0:0];
     }
@@ -248,18 +308,18 @@ contract Fiducia is ITransactionGuard, IModuleGuard {
     function _checkTransaction(address safe, address to, bytes calldata data, Enum.Operation operation) internal {
         bytes4 selector = _decodeSelector(data);
         bytes32 txId = keccak256(abi.encode(to, selector, operation));
+        bytes32 tokenIdentifier;
+        address recipient;
+        uint256 amount;
+        TokenTransferInfo memory tokenTransferInfo = TokenTransferInfo(0, 0);
 
-        if (selector == MultiSendCallOnly.multiSend.selector) {
-            bytes calldata transactions = _decodeMultiSendTransactions(data);
-            while (transactions.length > 0) {
-                (to, data, operation, transactions) = _decodeNextTransaction(transactions);
-                _checkTransaction(safe, to, data, operation);
-            }
-            return;
-        } else if (selector == IERC20.transfer.selector) {
-            (address recipient, uint256 amount) = abi.decode(data[4:], (address, uint256));
-            bytes32 tokenId = keccak256(abi.encode(to, recipient));
-            TokenTransferInfo memory tokenTransferInfo = allowedTokenTxInfos[safe][tokenId];
+        if (selector == IERC20.transfer.selector && data.length > 67) {
+            (recipient, amount) = abi.decode(data[4:], (address, uint256));
+            tokenIdentifier = keccak256(abi.encode(to, recipient, selector, operation));
+            tokenTransferInfo = allowedTokenTxInfos[safe][tokenIdentifier];
+        }
+
+        if (tokenTransferInfo.maxAmount > 0) {
             require(
                 tokenTransferInfo.activeFrom > 0 && tokenTransferInfo.activeFrom <= block.timestamp,
                 TokenTransferNotAllowed()
@@ -271,6 +331,13 @@ contract Fiducia is ITransactionGuard, IModuleGuard {
         } else if (_isGuardRemovalTransaction(safe, to, data)) {
             return;
         } else if (allowedTx[safe][txId] > 0 && allowedTx[safe][txId] <= block.timestamp) {
+            if (selector == MultiSendCallOnly.multiSend.selector) {
+                bytes calldata transactions = _decodeMultiSendTransactions(data);
+                while (transactions.length > 0) {
+                    (to, data, operation, transactions) = _decodeNextTransaction(transactions);
+                    _checkTransaction(safe, to, data, operation);
+                }
+            }
             return;
         }
 
@@ -299,10 +366,10 @@ contract Fiducia is ITransactionGuard, IModuleGuard {
 
         // Check if this is a call to remove guards
         if (to == safe) {
-            if (selector == SafeInterface(payable(safe)).setGuard.selector) {
+            if (selector == ISafe(payable(safe)).setGuard.selector) {
                 address newGuard = abi.decode(data[4:], (address));
                 return newGuard == address(0);
-            } else if (selector == SafeInterface(payable(safe)).setModuleGuard.selector) {
+            } else if (selector == ISafe(payable(safe)).setModuleGuard.selector) {
                 address newGuard = abi.decode(data[4:], (address));
                 return newGuard == address(0);
             }
@@ -346,6 +413,14 @@ contract Fiducia is ITransactionGuard, IModuleGuard {
         return data[:length];
     }
 
+    /**
+     * @notice Internal function to decode the next transaction from the multiSend transactions.
+     * @param transactions The remaining transactions data.
+     * @return to The address the transaction is sent to.
+     * @return data The data payload of the transaction.
+     * @return operation The operation type of the transaction.
+     * @return rest The remaining transactions data after decoding the next transaction.
+     */
     function _decodeNextTransaction(bytes calldata transactions)
         internal
         pure
@@ -408,7 +483,7 @@ contract Fiducia is ITransactionGuard, IModuleGuard {
      * @dev This function checks if the guard is still set up correctly and check removal setup, if necessary.
      */
     function _checkAfterExecution() internal virtual {
-        SafeInterface safe = SafeInterface(payable(msg.sender));
+        ISafe safe = ISafe(payable(msg.sender));
         address guard = abi.decode(safe.getStorageAt(GUARD_STORAGE_SLOT, 1), (address));
         address moduleGuard = abi.decode(safe.getStorageAt(MODULE_GUARD_STORAGE_SLOT, 1), (address));
 
@@ -422,8 +497,13 @@ contract Fiducia is ITransactionGuard, IModuleGuard {
         }
     }
 
-    function _checkGuardsSet() internal view virtual returns (bool set) {
-        SafeInterface safe = SafeInterface(payable(msg.sender));
+    /**
+     * @notice Internal function to check if the guards are set.
+     * @return status A boolean indicating if the guards are set correctly.
+     * @dev This function checks both the Tx Guard and the Module Guard.
+     */
+    function _checkGuardsSet() internal view virtual returns (bool) {
+        ISafe safe = ISafe(payable(msg.sender));
         address guard = abi.decode(safe.getStorageAt(GUARD_STORAGE_SLOT, 1), (address));
         address moduleGuard = abi.decode(safe.getStorageAt(MODULE_GUARD_STORAGE_SLOT, 1), (address));
 
@@ -466,7 +546,7 @@ contract Fiducia is ITransactionGuard, IModuleGuard {
      */
     function setAllowedTokenTransfer(address token, address to, uint256 maxAmount, bool reset) public virtual {
         uint256 allowedTimestamp = reset ? 0 : _checkGuardsSet() ? block.timestamp + DELAY : block.timestamp;
-        bytes32 tokenId = keccak256(abi.encode(token, to));
+        bytes32 tokenId = keccak256(abi.encode(token, to, IERC20.transfer.selector, Enum.Operation.Call));
         allowedTokenTxInfos[msg.sender][tokenId] = TokenTransferInfo(allowedTimestamp, maxAmount);
 
         emit TokenTransferAllowed(msg.sender, token, to, maxAmount, allowedTimestamp);
