@@ -441,7 +441,7 @@ contract FiduciaTest is Test {
 
         // Should be immediately allowed
         bytes32 txId = keccak256(abi.encode(recipient, bytes4(0), Enum.Operation.Call));
-        assertEq(fiducia.allowedTx(address(safe), txId), block.timestamp);
+        assertEq(fiducia.allowedTxs(address(safe), txId), block.timestamp);
     }
 
     /**
@@ -457,7 +457,7 @@ contract FiduciaTest is Test {
 
         // Should be allowed after delay
         bytes32 txId = keccak256(abi.encode(recipient, bytes4(0), Enum.Operation.Call));
-        assertEq(fiducia.allowedTx(address(safe), txId), block.timestamp + DELAY);
+        assertEq(fiducia.allowedTxs(address(safe), txId), block.timestamp + DELAY);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -511,7 +511,7 @@ contract FiduciaTest is Test {
 
         bytes32 tokenId =
             keccak256(abi.encode(address(testToken), recipient, testToken.transfer.selector, Enum.Operation.Call));
-        (uint256 activeFrom, uint256 storedMaxAmount) = fiducia.allowedTokenTxInfos(address(safe), tokenId);
+        (uint256 activeFrom, uint256 storedMaxAmount) = fiducia.allowedTokenTransferInfos(address(safe), tokenId);
         assertEq(activeFrom, block.timestamp);
         assertEq(storedMaxAmount, maxAmount);
     }
@@ -532,7 +532,7 @@ contract FiduciaTest is Test {
 
         bytes32 tokenId =
             keccak256(abi.encode(address(testToken), recipient, testToken.transfer.selector, Enum.Operation.Call));
-        (uint256 activeFrom, uint256 storedMaxAmount) = fiducia.allowedTokenTxInfos(address(safe), tokenId);
+        (uint256 activeFrom, uint256 storedMaxAmount) = fiducia.allowedTokenTransferInfos(address(safe), tokenId);
         assertEq(activeFrom, block.timestamp + DELAY);
         assertEq(storedMaxAmount, maxAmount);
     }
@@ -729,7 +729,7 @@ contract FiduciaTest is Test {
 
         bytes32 txId = keccak256(abi.encode(recipient, bytes4(0), Enum.Operation.Call));
         // Verify it was set with current timestamp
-        assertEq(fiducia.allowedTx(address(safe), txId), block.timestamp);
+        assertEq(fiducia.allowedTxs(address(safe), txId), block.timestamp);
 
         // Now reset it
         vm.prank(address(safe));
@@ -738,7 +738,7 @@ contract FiduciaTest is Test {
         fiducia.setAllowedTx(recipient, bytes4(0), Enum.Operation.Call, true);
 
         // Verify it was reset to 0
-        assertEq(fiducia.allowedTx(address(safe), txId), 0);
+        assertEq(fiducia.allowedTxs(address(safe), txId), 0);
     }
 
     /**
@@ -753,7 +753,7 @@ contract FiduciaTest is Test {
 
         bytes32 txId = keccak256(abi.encode(recipient, bytes4(0), Enum.Operation.Call));
         // Verify it was set with delay
-        assertEq(fiducia.allowedTx(address(safe), txId), block.timestamp + DELAY);
+        assertEq(fiducia.allowedTxs(address(safe), txId), block.timestamp + DELAY);
 
         // Now reset it
         vm.prank(address(safe));
@@ -762,7 +762,7 @@ contract FiduciaTest is Test {
         fiducia.setAllowedTx(recipient, bytes4(0), Enum.Operation.Call, true);
 
         // Verify it was reset to 0
-        assertEq(fiducia.allowedTx(address(safe), txId), 0);
+        assertEq(fiducia.allowedTxs(address(safe), txId), 0);
     }
 
     /**
@@ -829,7 +829,7 @@ contract FiduciaTest is Test {
 
         bytes32 tokenId =
             keccak256(abi.encode(address(testToken), recipient, testToken.transfer.selector, Enum.Operation.Call));
-        (uint256 activeFrom, uint256 storedMaxAmount) = fiducia.allowedTokenTxInfos(address(safe), tokenId);
+        (uint256 activeFrom, uint256 storedMaxAmount) = fiducia.allowedTokenTransferInfos(address(safe), tokenId);
         // Verify it was set with current timestamp
         assertEq(activeFrom, block.timestamp);
         assertEq(storedMaxAmount, maxAmount);
@@ -840,7 +840,7 @@ contract FiduciaTest is Test {
         emit Fiducia.TokenTransferAllowed(address(safe), address(testToken), recipient, maxAmount, 0);
         fiducia.setAllowedTokenTransfer(address(testToken), recipient, maxAmount, true);
 
-        (activeFrom, storedMaxAmount) = fiducia.allowedTokenTxInfos(address(safe), tokenId);
+        (activeFrom, storedMaxAmount) = fiducia.allowedTokenTransferInfos(address(safe), tokenId);
         // Verify it was reset to 0 but amount remains
         assertEq(activeFrom, 0);
         assertEq(storedMaxAmount, maxAmount);
@@ -859,7 +859,7 @@ contract FiduciaTest is Test {
 
         bytes32 tokenId =
             keccak256(abi.encode(address(testToken), recipient, testToken.transfer.selector, Enum.Operation.Call));
-        (uint256 activeFrom, uint256 storedMaxAmount) = fiducia.allowedTokenTxInfos(address(safe), tokenId);
+        (uint256 activeFrom, uint256 storedMaxAmount) = fiducia.allowedTokenTransferInfos(address(safe), tokenId);
         // Verify it was set with delay
         assertEq(activeFrom, block.timestamp + DELAY);
         assertEq(storedMaxAmount, maxAmount);
@@ -870,7 +870,7 @@ contract FiduciaTest is Test {
         emit Fiducia.TokenTransferAllowed(address(safe), address(testToken), recipient, maxAmount, 0);
         fiducia.setAllowedTokenTransfer(address(testToken), recipient, maxAmount, true);
 
-        (activeFrom, storedMaxAmount) = fiducia.allowedTokenTxInfos(address(safe), tokenId);
+        (activeFrom, storedMaxAmount) = fiducia.allowedTokenTransferInfos(address(safe), tokenId);
         // Verify it was reset to 0 but amount remains
         assertEq(activeFrom, 0);
         assertEq(storedMaxAmount, maxAmount);

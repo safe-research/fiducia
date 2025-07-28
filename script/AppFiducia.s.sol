@@ -3,23 +3,22 @@ pragma solidity ^0.8.13;
 
 import {Script, console} from "forge-std/Script.sol";
 import {SafeSingletonFactory} from "./SafeSingletonFactory.sol";
-import {Fiducia} from "../src/Fiducia.sol";
+import {AppFiducia} from "../src/test/AppFiducia.sol";
 
-contract FiduciaScript is Script {
-    Fiducia public fiducia;
+contract AppFiduciaScript is Script {
+    AppFiducia public addFiducia;
 
     function setUp() public {}
 
     function run() public {
         vm.startBroadcast(vm.envUint("PRIVATE_KEY"));
 
-        uint256 delay = 0;
+        uint256 delay = 30;
 
-        // Deploy the Fiducia contract using the SafeSingletonFactory
-        fiducia = Fiducia(
+        addFiducia = AppFiducia(
             SafeSingletonFactory.deploy({
                 salt: bytes32(0),
-                code: abi.encodePacked(type(Fiducia).creationCode, abi.encode(delay))
+                code: abi.encodePacked(type(AppFiducia).creationCode, abi.encode(delay))
             })
         );
 

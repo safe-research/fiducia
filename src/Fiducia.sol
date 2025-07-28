@@ -70,7 +70,7 @@ contract Fiducia is ITransactionGuard, IModuleGuard {
      *      txIdentifier The identifier for the transaction, is a hash of the transaction details (to, selector, operation, required data)
      *      timestamp The timestamp when the transaction is allowed.
      */
-    mapping(address safe => mapping(bytes32 txIdentifier => uint256 timestamp)) public allowedTx;
+    mapping(address safe => mapping(bytes32 txIdentifier => uint256 timestamp)) public allowedTxs;
 
     /**
      * @notice The mapping of allowed token transactions.
@@ -79,7 +79,7 @@ contract Fiducia is ITransactionGuard, IModuleGuard {
      *      timestamp The timestamp when the token transfer is allowed.
      */
     mapping(address safe => mapping(bytes32 tokenIdentifier => TokenTransferInfo tokenTransferInfo)) public
-        allowedTokenTxInfos;
+        allowedTokenTransferInfos;
 
     /**
      * @notice The mapping of cosigner information.
@@ -172,6 +172,7 @@ contract Fiducia is ITransactionGuard, IModuleGuard {
      * @notice Function to schedule the guard removal
      */
     function scheduleGuardRemoval() public {
+        require(_checkGuardsSet(), ImproperGuardSetup());
         removalSchedule[msg.sender] = DELAY + block.timestamp;
 
         emit GuardRemovalScheduled(msg.sender, DELAY + block.timestamp);
@@ -223,6 +224,43 @@ contract Fiducia is ITransactionGuard, IModuleGuard {
     }
 
     /**
+     * @notice Internal function to add transactions executed by a cosigner.
+     * @param safe The address of the Safe contract.
+     * @param to The address the transaction is sent to.
+     * @param data The data payload of the transaction.
+     * @param operation The operation type of the transaction.
+     * @dev This function is called when a cosigner approves a transaction, allowing it to be executed immediately next time.
+     */
+    function _allowanceByCosigner(address safe, address to, bytes calldata data, Enum.Operation operation)
+        internal
+        virtual
+    {
+        bytes4 selector = _decodeSelector(data);
+        bytes32 txId = keccak256(abi.encode(to, selector, operation));
+
+        // Add the txId to allowed transactions immediately if not already present.
+        uint256 currentTxTimestamp = allowedTxs[safe][txId];
+        if (currentTxTimestamp == 0 || currentTxTimestamp > block.timestamp) {
+            allowedTxs[safe][txId] = block.timestamp;
+            emit TxAllowed(safe, to, selector, operation, block.timestamp);
+        }
+
+        if (operation == Enum.Operation.Call && selector == IERC20.transfer.selector && data.length > 67) {
+            // Decode the recipient and amount from the data.
+            (address recipient, uint256 amount) = abi.decode(data[4:], (address, uint256));
+            bytes32 tokenIdentifier = keccak256(abi.encode(to, recipient, selector, operation));
+            // Set the token transfer info if not already present or maxAmount < amount.
+            TokenTransferInfo memory tokenTransferInfo = allowedTokenTransferInfos[safe][tokenIdentifier];
+            uint256 newTimestamp = tokenTransferInfo.activeFrom == 0 || tokenTransferInfo.activeFrom > block.timestamp
+                ? block.timestamp
+                : tokenTransferInfo.activeFrom;
+            uint256 newMaxAmount = tokenTransferInfo.maxAmount < amount ? amount : tokenTransferInfo.maxAmount;
+            allowedTokenTransferInfos[safe][tokenIdentifier] = TokenTransferInfo(newTimestamp, newMaxAmount);
+            emit TokenTransferAllowed(safe, to, recipient, newMaxAmount, newTimestamp);
+        }
+    }
+
+    /**
      * @notice Internal function to check if a transaction is approved by a cosigner.
      * @param safe The address of the Safe contract.
      * @param to The address the transaction is sent to.
@@ -254,17 +292,16 @@ contract Fiducia is ITransactionGuard, IModuleGuard {
             address(0),
             ISafe(payable(safe)).nonce() - 1 // The Guard check is executed post nonce increment, so we need to subtract 1 from the nonce.
         );
-        bytes32 txId = keccak256(abi.encode(to, _decodeSelector(data), operation));
 
         // Retrieve the co-signer configured for the Safe account.
         CosignerInfo memory info = cosignerInfos[safe];
 
         // Check if the cosigner is active
         if (info.activeFrom > 0 && info.activeFrom <= block.timestamp) {
-            status = SignatureChecker.isValidSignatureNow(info.cosigner, safeTxHash, _decodeContext(signature));
+            status =
+                SignatureChecker.isValidSignatureNow(info.cosigner, safeTxHash, _decodeCosignerSignature(signature));
             if (status) {
-                // Add the txId to allowed transactions immediately.
-                allowedTx[safe][txId] = block.timestamp;
+                _allowanceByCosigner(safe, to, data, operation);
                 return true;
             }
         }
@@ -272,9 +309,9 @@ contract Fiducia is ITransactionGuard, IModuleGuard {
     }
 
     /**
-     * @dev Decodes additional context to pass to the policy from the signatures bytes.
+     * @dev Decodes the cosigner signature from the provided signatures.
      */
-    function _decodeContext(bytes calldata signatures) internal pure returns (bytes calldata) {
+    function _decodeCosignerSignature(bytes calldata signatures) internal pure virtual returns (bytes calldata) {
         if (signatures.length < 66) {
             return _emptyContext();
         }
@@ -316,7 +353,7 @@ contract Fiducia is ITransactionGuard, IModuleGuard {
         if (selector == IERC20.transfer.selector && data.length > 67) {
             (recipient, amount) = abi.decode(data[4:], (address, uint256));
             tokenIdentifier = keccak256(abi.encode(to, recipient, selector, operation));
-            tokenTransferInfo = allowedTokenTxInfos[safe][tokenIdentifier];
+            tokenTransferInfo = allowedTokenTransferInfos[safe][tokenIdentifier];
         }
 
         if (tokenTransferInfo.maxAmount > 0) {
@@ -330,7 +367,7 @@ contract Fiducia is ITransactionGuard, IModuleGuard {
             return;
         } else if (_isGuardRemovalTransaction(safe, to, data)) {
             return;
-        } else if (allowedTx[safe][txId] > 0 && allowedTx[safe][txId] <= block.timestamp) {
+        } else if (allowedTxs[safe][txId] > 0 && allowedTxs[safe][txId] <= block.timestamp) {
             if (selector == MultiSendCallOnly.multiSend.selector) {
                 bytes calldata transactions = _decodeMultiSendTransactions(data);
                 while (transactions.length > 0) {
@@ -520,7 +557,7 @@ contract Fiducia is ITransactionGuard, IModuleGuard {
     function setAllowedTx(address to, bytes4 selector, Enum.Operation operation, bool reset) public virtual {
         uint256 allowedTimestamp = reset ? 0 : _checkGuardsSet() ? block.timestamp + DELAY : block.timestamp;
         bytes32 txId = keccak256(abi.encode(to, selector, operation));
-        allowedTx[msg.sender][txId] = allowedTimestamp;
+        allowedTxs[msg.sender][txId] = allowedTimestamp;
 
         emit TxAllowed(msg.sender, to, selector, operation, allowedTimestamp);
     }
@@ -547,7 +584,7 @@ contract Fiducia is ITransactionGuard, IModuleGuard {
     function setAllowedTokenTransfer(address token, address to, uint256 maxAmount, bool reset) public virtual {
         uint256 allowedTimestamp = reset ? 0 : _checkGuardsSet() ? block.timestamp + DELAY : block.timestamp;
         bytes32 tokenId = keccak256(abi.encode(token, to, IERC20.transfer.selector, Enum.Operation.Call));
-        allowedTokenTxInfos[msg.sender][tokenId] = TokenTransferInfo(allowedTimestamp, maxAmount);
+        allowedTokenTransferInfos[msg.sender][tokenId] = TokenTransferInfo(allowedTimestamp, maxAmount);
 
         emit TokenTransferAllowed(msg.sender, token, to, maxAmount, allowedTimestamp);
     }
