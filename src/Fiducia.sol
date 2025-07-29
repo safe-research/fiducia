@@ -38,15 +38,15 @@ contract Fiducia is ITransactionGuard, IModuleGuard {
     }
 
     /**
-     * @notice The storage slot for the guard
-     * @dev This is used to check if the guard is set
+     * @notice The storage slot for the guard.
+     * @dev This is used to check if the guard is set.
      *      Value = `keccak256("guard_manager.guard.address")`
      */
     uint256 public constant GUARD_STORAGE_SLOT = 0x4a204f620c8c5ccdca3fd54d003badd85ba500436a431f0cbda4f558c93c34c8;
 
     /**
-     * @notice The storage slot for the module guard
-     * @dev This is used to check if the module guard is set
+     * @notice The storage slot for the module guard.
+     * @dev This is used to check if the module guard is set.
      *      Value = `keccak256("module_manager.module_guard.address")`
      */
     uint256 public constant MODULE_GUARD_STORAGE_SLOT =
@@ -67,7 +67,7 @@ contract Fiducia is ITransactionGuard, IModuleGuard {
     /**
      * @notice The mapping of allowed transaction types.
      * @dev safe The address of the safe.
-     *      txIdentifier The identifier for the transaction, is a hash of the transaction details (to, selector, operation, required data)
+     *      txIdentifier The identifier for the transaction, is a hash of the transaction details (to, selector, operation)
      *      timestamp The timestamp when the transaction is allowed.
      */
     mapping(address safe => mapping(bytes32 txIdentifier => uint256 timestamp)) public allowedTxs;
@@ -76,7 +76,7 @@ contract Fiducia is ITransactionGuard, IModuleGuard {
      * @notice The mapping of allowed token transactions.
      * @dev safe The address of the safe.
      *      tokenIdentifier The identifier for the token transfer, is a hash of the token address & recipient address.
-     *      timestamp The timestamp when the token transfer is allowed.
+     *      tokenTransferInfo The information about the token transfer, which includes the activeFrom timestamp and maxAmount.
      */
     mapping(address safe => mapping(bytes32 tokenIdentifier => TokenTransferInfo tokenTransferInfo)) public
         allowedTokenTransferInfos;
@@ -84,12 +84,12 @@ contract Fiducia is ITransactionGuard, IModuleGuard {
     /**
      * @notice The mapping of cosigner information.
      * @dev safe The address of the safe.
-     *      CosignerInfo The information about the cosigner.
+     *      cosigner The information about the cosigner, which includes the activeFrom timestamp and cosigner address.
      */
     mapping(address safe => CosignerInfo cosigner) public cosignerInfos;
 
     /**
-     * @notice Event emitted when the guard removal is scheduled
+     * @notice Event emitted when the guard removal is scheduled.
      * @param safe The address of the safe.
      * @param timestamp The timestamp when the guard removal is scheduled.
      */
@@ -109,7 +109,7 @@ contract Fiducia is ITransactionGuard, IModuleGuard {
     );
 
     /**
-     * @notice Event emitted when a cosigner is set
+     * @notice Event emitted when a cosigner is set.
      * @param safe The address of the safe.
      * @param cosigner The address of the cosigner.
      * @param activeFrom The timestamp from which the cosigner is considered active.
@@ -118,16 +118,16 @@ contract Fiducia is ITransactionGuard, IModuleGuard {
     event CosignerSet(address indexed safe, address indexed cosigner, uint256 activeFrom);
 
     /**
-     * @notice Event emitted when a token transfer is allowed
+     * @notice Event emitted when a token transfer is allowed.
      * @param safe The address of the safe.
      * @param token The address of the token contract.
-     * @param to The address the tokens are sent to.
+     * @param recipient The address the tokens are sent to.
      * @param amount The maximum amount of tokens that can be transferred in a single transaction.
      * @param activeFrom The timestamp from which the token transfer is considered allowed.
      * @dev This event is emitted when a token transfer is allowed or reset.
      */
     event TokenTransferAllowed(
-        address indexed safe, address indexed token, address indexed to, uint256 amount, uint256 activeFrom
+        address indexed safe, address indexed token, address indexed recipient, uint256 amount, uint256 activeFrom
     );
 
     /**
@@ -183,7 +183,7 @@ contract Fiducia is ITransactionGuard, IModuleGuard {
      */
     function _removeGuard() internal {
         uint256 removalTimestamp = removalSchedule[msg.sender];
-        require(removalTimestamp > 0 && removalTimestamp < block.timestamp, InvalidTimestamp());
+        require(removalTimestamp > 0 && removalTimestamp <= block.timestamp, InvalidTimestamp());
 
         removalSchedule[msg.sender] = 0;
     }
@@ -340,45 +340,98 @@ contract Fiducia is ITransactionGuard, IModuleGuard {
      * @param to The address the transaction is sent to.
      * @param data The data payload of the transaction.
      * @param operation The operation type of the transaction.
-     * @dev This function checks if the transaction is allowed mainly based on the allowed transactions mapping.
+     * @dev This function checks if the transaction is allowed through multiple validation paths:
+     *      1. Token transfer allowances (for ERC20 transfers)
+     *      2. Guard internal transactions (setCosigner, setAllowedTx, etc.)
+     *      3. Guard removal transactions (with delay)
+     *      4. General allowed transactions (with multiSend support)
      */
     function _checkTransaction(address safe, address to, bytes calldata data, Enum.Operation operation) internal {
         bytes4 selector = _decodeSelector(data);
-        bytes32 txId = keccak256(abi.encode(to, selector, operation));
-        bytes32 tokenIdentifier;
-        address recipient;
-        uint256 amount;
-        TokenTransferInfo memory tokenTransferInfo = TokenTransferInfo(0, 0);
 
-        if (selector == IERC20.transfer.selector && data.length > 67) {
-            (recipient, amount) = abi.decode(data[4:], (address, uint256));
-            tokenIdentifier = keccak256(abi.encode(to, recipient, selector, operation));
-            tokenTransferInfo = allowedTokenTransferInfos[safe][tokenIdentifier];
+        // Check for guard internal transactions (setCosigner, setAllowedTx, etc.)
+        if (_setTransactions(to, selector, operation)) {
+            return;
         }
 
-        if (tokenTransferInfo.maxAmount > 0) {
-            require(
-                tokenTransferInfo.activeFrom > 0 && tokenTransferInfo.activeFrom <= block.timestamp,
-                TokenTransferNotAllowed()
-            );
-            require(amount <= tokenTransferInfo.maxAmount, TokenTransferExceedsLimit());
+        // Check for guard removal transactions
+        if (_isGuardRemovalTransaction(safe, to, data)) {
             return;
-        } else if (_setTransactions(to, selector, operation)) {
+        }
+
+        // Check for token transfer allowances first (most common case for ERC20 tokens)
+        if (_checkTokenTransfer(safe, to, selector, data, operation)) {
             return;
-        } else if (_isGuardRemovalTransaction(safe, to, data)) {
-            return;
-        } else if (allowedTxs[safe][txId] > 0 && allowedTxs[safe][txId] <= block.timestamp) {
-            if (selector == MultiSendCallOnly.multiSend.selector) {
-                bytes calldata transactions = _decodeMultiSendTransactions(data);
-                while (transactions.length > 0) {
-                    (to, data, operation, transactions) = _decodeNextTransaction(transactions);
-                    _checkTransaction(safe, to, data, operation);
-                }
-            }
+        }
+
+        // Check for general allowed transactions
+        bytes32 txId = keccak256(abi.encode(to, selector, operation));
+        if (allowedTxs[safe][txId] > 0 && allowedTxs[safe][txId] <= block.timestamp) {
+            _handleMultiSendIfNeeded(safe, selector, data);
             return;
         }
 
         revert FirstTimeTx();
+    }
+
+    /**
+     * @notice Internal function to check if a token transfer is allowed.
+     * @param safe The address of the Safe contract.
+     * @param to The address the transaction is sent to.
+     * @param selector The function selector of the transaction.
+     * @param data The data payload of the transaction.
+     * @param operation The operation type of the transaction.
+     * @return allowed True if the token transfer is allowed, false otherwise.
+     */
+    function _checkTokenTransfer(
+        address safe,
+        address to,
+        bytes4 selector,
+        bytes calldata data,
+        Enum.Operation operation
+    ) internal view returns (bool allowed) {
+        // Only check ERC20 transfers with sufficient data length
+        if (selector != IERC20.transfer.selector || data.length <= 67) {
+            return false;
+        }
+
+        (address recipient, uint256 amount) = abi.decode(data[4:], (address, uint256));
+        bytes32 tokenIdentifier = keccak256(abi.encode(to, recipient, selector, operation));
+        TokenTransferInfo memory tokenTransferInfo = allowedTokenTransferInfos[safe][tokenIdentifier];
+
+        // Check if token transfer is configured and active
+        if (tokenTransferInfo.maxAmount == 0) {
+            return false;
+        }
+
+        require(
+            tokenTransferInfo.activeFrom > 0 && tokenTransferInfo.activeFrom <= block.timestamp,
+            TokenTransferNotAllowed()
+        );
+        require(amount <= tokenTransferInfo.maxAmount, TokenTransferExceedsLimit());
+
+        return true;
+    }
+
+    /**
+     * @notice Internal function to handle multiSend transactions recursively.
+     * @param safe The address of the Safe contract.
+     * @param selector The function selector of the transaction.
+     * @param data The data payload of the transaction.
+     */
+    function _handleMultiSendIfNeeded(address safe, bytes4 selector, bytes calldata data) internal {
+        if (selector != MultiSendCallOnly.multiSend.selector) {
+            return;
+        }
+
+        bytes calldata transactions = _decodeMultiSendTransactions(data);
+        while (transactions.length > 0) {
+            address to;
+            bytes calldata txData;
+            Enum.Operation operation;
+            (to, txData, operation, transactions) = _decodeNextTransaction(transactions);
+            _checkTransaction(safe, to, txData, operation);
+        }
     }
 
     /**
@@ -403,12 +456,11 @@ contract Fiducia is ITransactionGuard, IModuleGuard {
 
         // Check if this is a call to remove guards
         if (to == safe) {
-            if (selector == ISafe(payable(safe)).setGuard.selector) {
-                address newGuard = abi.decode(data[4:], (address));
-                return newGuard == address(0);
-            } else if (selector == ISafe(payable(safe)).setModuleGuard.selector) {
-                address newGuard = abi.decode(data[4:], (address));
-                return newGuard == address(0);
+            if (
+                selector == ISafe(payable(safe)).setGuard.selector
+                    || selector == ISafe(payable(safe)).setModuleGuard.selector
+            ) {
+                return true;
             }
         }
         return false;
@@ -552,6 +604,7 @@ contract Fiducia is ITransactionGuard, IModuleGuard {
      * @param to The address the transaction is sent to.
      * @param selector The function selector of the transaction.
      * @param operation The operation type of the transaction.
+     * @param reset Whether to reset the timestamp to 0 (immediate allowance).
      * @dev This function allows setting a transaction type that can be executed without delay.
      */
     function setAllowedTx(address to, bytes4 selector, Enum.Operation operation, bool reset) public virtual {
@@ -565,6 +618,7 @@ contract Fiducia is ITransactionGuard, IModuleGuard {
     /**
      * @notice Function to set a cosigner for the Safe account.
      * @param cosigner The address of the cosigner.
+     * @param reset Whether to reset the timestamp to 0 (immediate allowance).
      * @dev This function allows setting a cosigner that can approve transactions without delay.
      */
     function setCosigner(address cosigner, bool reset) public virtual {
@@ -577,16 +631,17 @@ contract Fiducia is ITransactionGuard, IModuleGuard {
     /**
      * @notice Function to set an allowed token transfer.
      * @param token The address of the token contract.
-     * @param to The address the tokens are sent to.
+     * @param recipient The address the tokens are sent to.
      * @param maxAmount The maximum amount of tokens that can be transferred in a single transaction.
+     * @param reset Whether to reset the timestamp to 0 (immediate allowance).
      * @dev This function allows setting a token transfer that can be executed without delay.
      */
-    function setAllowedTokenTransfer(address token, address to, uint256 maxAmount, bool reset) public virtual {
+    function setAllowedTokenTransfer(address token, address recipient, uint256 maxAmount, bool reset) public virtual {
         uint256 allowedTimestamp = reset ? 0 : _checkGuardsSet() ? block.timestamp + DELAY : block.timestamp;
-        bytes32 tokenId = keccak256(abi.encode(token, to, IERC20.transfer.selector, Enum.Operation.Call));
+        bytes32 tokenId = keccak256(abi.encode(token, recipient, IERC20.transfer.selector, Enum.Operation.Call));
         allowedTokenTransferInfos[msg.sender][tokenId] = TokenTransferInfo(allowedTimestamp, maxAmount);
 
-        emit TokenTransferAllowed(msg.sender, token, to, maxAmount, allowedTimestamp);
+        emit TokenTransferAllowed(msg.sender, token, recipient, maxAmount, allowedTimestamp);
     }
 
     /**
@@ -595,5 +650,90 @@ contract Fiducia is ITransactionGuard, IModuleGuard {
     function supportsInterface(bytes4 interfaceId) external pure returns (bool supported) {
         supported = interfaceId == type(IERC165).interfaceId || interfaceId == type(IModuleGuard).interfaceId
             || interfaceId == type(ITransactionGuard).interfaceId;
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                              VIEW FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+
+    /**
+     * @notice Check if a transaction would be allowed without executing it.
+     * @param safe The address of the Safe contract.
+     * @param to The address the transaction is sent to.
+     * @param data The data payload of the transaction.
+     * @param operation The operation type of the transaction.
+     * @return allowed True if the transaction would be allowed, false otherwise.
+     * @return reason A string describing why the transaction is not allowed (empty if allowed).
+     */
+    function isTransactionAllowed(address safe, address to, bytes calldata data, Enum.Operation operation)
+        public
+        view
+        returns (bool allowed, string memory reason)
+    {
+        bytes4 selector = _decodeSelector(data);
+
+        // Check for guard internal transactions
+        if (_setTransactions(to, selector, operation)) {
+            return (true, "");
+        }
+
+        // Check for guard removal transactions
+        if (_isGuardRemovalTransaction(safe, to, data)) {
+            return (true, "");
+        }
+
+        // Check for token transfer allowances first
+        if (selector == IERC20.transfer.selector && data.length > 67) {
+            (address recipient, uint256 amount) = abi.decode(data[4:], (address, uint256));
+            bytes32 tokenIdentifier = keccak256(abi.encode(to, recipient, selector, operation));
+            TokenTransferInfo memory tokenTransferInfo = allowedTokenTransferInfos[safe][tokenIdentifier];
+
+            if (tokenTransferInfo.maxAmount > 0) {
+                if (tokenTransferInfo.activeFrom == 0 || tokenTransferInfo.activeFrom > block.timestamp) {
+                    return (false, "Token transfer not yet active");
+                }
+                if (amount > tokenTransferInfo.maxAmount) {
+                    return (false, "Token transfer exceeds limit");
+                }
+                return (true, "");
+            }
+        }
+
+        // Check for general allowed transactions
+        bytes32 txId = keccak256(abi.encode(to, selector, operation));
+        if (allowedTxs[safe][txId] > 0 && allowedTxs[safe][txId] <= block.timestamp) {
+            // Check if the transaction is a multiSend
+            if (selector == MultiSendCallOnly.multiSend.selector) {
+                bytes calldata transactions = _decodeMultiSendTransactions(data);
+                while (transactions.length > 0) {
+                    address nextTo;
+                    bytes calldata nextData;
+                    Enum.Operation nextOperation;
+                    (nextTo, nextData, nextOperation, transactions) = _decodeNextTransaction(transactions);
+                    (bool nextAllowed, string memory nextReason) =
+                        isTransactionAllowed(safe, nextTo, nextData, nextOperation);
+                    if (!nextAllowed) {
+                        return (false, nextReason);
+                    }
+                }
+            }
+            return (true, "");
+        }
+
+        return (false, "Transaction not allowed - first time execution");
+    }
+
+    /**
+     * @notice Check if a cosigner is active for a given Safe.
+     * @param safe The address of the Safe contract.
+     * @return active True if the cosigner is active, false otherwise.
+     * @return cosigner The address of the cosigner.
+     * @return activeFrom The timestamp from which the cosigner is active.
+     */
+    function getCosignerInfo(address safe) external view returns (bool active, address cosigner, uint256 activeFrom) {
+        CosignerInfo memory info = cosignerInfos[safe];
+        active = info.activeFrom > 0 && info.activeFrom <= block.timestamp;
+        cosigner = info.cosigner;
+        activeFrom = info.activeFrom;
     }
 }

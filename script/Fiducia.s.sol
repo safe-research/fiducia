@@ -13,7 +13,7 @@ contract FiduciaScript is Script {
     function run() public {
         vm.startBroadcast(vm.envUint("PRIVATE_KEY"));
 
-        uint256 delay = 0;
+        uint256 delay = 3600;
 
         // Deploy the Fiducia contract using the SafeSingletonFactory
         fiducia = Fiducia(
