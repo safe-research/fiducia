@@ -949,4 +949,111 @@ contract FiduciaTest is Test {
             getExecutorSignature(owner)
         );
     }
+
+    /*//////////////////////////////////////////////////////////////
+                           VIEW FUNCTION TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    /**
+     * @dev Test isTransactionAllowed view function
+     */
+    function testIsTransactionAllowed() public {
+        setupGuard();
+
+        // Test unallowed transaction
+        (bool allowed, string memory reason) =
+            fiducia.isTransactionAllowed(address(safe), recipient, emptyBytes, Enum.Operation.Call);
+        assertFalse(allowed);
+        assertEq(reason, "Transaction not allowed - first time execution");
+
+        // Set allowed transaction
+        vm.prank(address(safe));
+        fiducia.setAllowedTx(recipient, bytes4(0), Enum.Operation.Call, false);
+
+        // Test before delay
+        (allowed, reason) = fiducia.isTransactionAllowed(address(safe), recipient, emptyBytes, Enum.Operation.Call);
+        assertFalse(allowed);
+        assertEq(reason, "Transaction not allowed - first time execution");
+
+        // Test after delay
+        vm.warp(block.timestamp + DELAY + 1);
+        (allowed, reason) = fiducia.isTransactionAllowed(address(safe), recipient, emptyBytes, Enum.Operation.Call);
+        assertTrue(allowed);
+        assertEq(reason, "");
+    }
+
+    /**
+     * @dev Test isTransactionAllowed for token transfers
+     */
+    function testIsTransactionAllowedTokenTransfer() public {
+        setupGuard();
+
+        bytes memory transferData = abi.encodeWithSelector(testToken.transfer.selector, recipient, 50e12);
+
+        // Test unallowed token transfer
+        (bool allowed, string memory reason) =
+            fiducia.isTransactionAllowed(address(safe), address(testToken), transferData, Enum.Operation.Call);
+        assertFalse(allowed);
+        assertEq(reason, "Transaction not allowed - first time execution");
+
+        // Set allowed token transfer
+        vm.prank(address(safe));
+        fiducia.setAllowedTokenTransfer(address(testToken), recipient, 100e12, false);
+
+        // Test before delay
+        (allowed, reason) =
+            fiducia.isTransactionAllowed(address(safe), address(testToken), transferData, Enum.Operation.Call);
+        assertFalse(allowed);
+        assertEq(reason, "Token transfer not yet active");
+
+        // Test after delay
+        vm.warp(block.timestamp + DELAY + 1);
+        (allowed, reason) =
+            fiducia.isTransactionAllowed(address(safe), address(testToken), transferData, Enum.Operation.Call);
+        assertTrue(allowed);
+        assertEq(reason, "");
+
+        // Test exceeding limit
+        bytes memory excessiveTransferData = abi.encodeWithSelector(testToken.transfer.selector, recipient, 150e12);
+        (allowed, reason) =
+            fiducia.isTransactionAllowed(address(safe), address(testToken), excessiveTransferData, Enum.Operation.Call);
+        assertFalse(allowed);
+        assertEq(reason, "Token transfer exceeds limit");
+    }
+
+    /**
+     * @dev Test getCosignerInfo view function
+     */
+    function testGetCosignerInfo() public {
+        // Test with no cosigner set
+        (bool active, address returnedCosigner, uint256 activeFrom) = fiducia.getCosignerInfo(address(safe));
+        assertFalse(active);
+        assertEq(returnedCosigner, address(0));
+        assertEq(activeFrom, 0);
+
+        // Set cosigner without guard
+        vm.prank(address(safe));
+        fiducia.setCosigner(cosigner, false);
+
+        (active, returnedCosigner, activeFrom) = fiducia.getCosignerInfo(address(safe));
+        assertTrue(active);
+        assertEq(returnedCosigner, cosigner);
+        assertEq(activeFrom, block.timestamp);
+
+        // Set cosigner with guard (delay)
+        setupGuard();
+        vm.prank(address(safe));
+        fiducia.setCosigner(cosigner, false);
+
+        (active, returnedCosigner, activeFrom) = fiducia.getCosignerInfo(address(safe));
+        assertFalse(active); // Not active yet due to delay
+        assertEq(returnedCosigner, cosigner);
+        assertEq(activeFrom, block.timestamp + DELAY);
+
+        // Test after delay
+        vm.warp(block.timestamp + DELAY + 1);
+        (active, returnedCosigner, activeFrom) = fiducia.getCosignerInfo(address(safe));
+        assertTrue(active);
+        assertEq(returnedCosigner, cosigner);
+    }
 }

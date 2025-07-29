@@ -4,6 +4,11 @@ pragma solidity ^0.8.13;
 import {Fiducia, SignatureChecker, Enum, ISafe, IERC20} from "../Fiducia.sol";
 import {EnumerableSet} from "openzeppelin-contracts/contracts/utils/structs/EnumerableSet.sol";
 
+/**
+ * @title AppFiducia
+ * @dev This contract extends the Fiducia contract to provide additional functionality for Safe App.
+ *      This should only be used for demo purposes.
+ */
 contract AppFiducia is Fiducia {
     using EnumerableSet for EnumerableSet.Bytes32Set;
 
@@ -21,17 +26,32 @@ contract AppFiducia is Fiducia {
 
     /**
      * @dev Information about a token transfer.
-     * @param to The token address.
+     * @param token The token address.
      * @param recipient The address the tokens are sent to.
      */
     struct TokenIdentifierInfo {
-        address to;
+        address token;
         address recipient;
     }
 
+    /**
+     * @dev Mapping of safe to transaction identifiers.
+     */
     mapping(address => EnumerableSet.Bytes32Set) private _txIdentifiers;
+
+    /**
+     * @dev Mapping of transaction identifiers to their information.
+     */
     mapping(bytes32 txIdentifier => TxIdentifierInfo) private _txIdentifiersInfo;
+
+    /**
+     * @dev Mapping of safe to allowed token transfer information.
+     */
     mapping(address => EnumerableSet.Bytes32Set) private _tokenIdentifiers;
+
+    /**
+     * @dev Mapping of token identifiers to their information.
+     */
     mapping(bytes32 tokenId => TokenIdentifierInfo) private _tokenIdentifiersInfo;
 
     /**
@@ -148,13 +168,13 @@ contract AppFiducia is Fiducia {
     /**
      * @notice Function to set an allowed token transfer.
      * @param token The address of the token contract.
-     * @param to The address the tokens are sent to.
+     * @param recipient The address the tokens are sent to.
      * @param maxAmount The maximum amount of tokens that can be transferred in a single transaction.
      * @dev This function allows setting a token transfer that can be executed without delay.
      */
-    function setAllowedTokenTransfer(address token, address to, uint256 maxAmount, bool reset) public override {
+    function setAllowedTokenTransfer(address token, address recipient, uint256 maxAmount, bool reset) public override {
         uint256 allowedTimestamp = reset ? 0 : _checkGuardsSet() ? block.timestamp + DELAY : block.timestamp;
-        bytes32 tokenId = keccak256(abi.encode(token, to, IERC20.transfer.selector, Enum.Operation.Call));
+        bytes32 tokenId = keccak256(abi.encode(token, recipient, IERC20.transfer.selector, Enum.Operation.Call));
         allowedTokenTransferInfos[msg.sender][tokenId] = TokenTransferInfo(allowedTimestamp, maxAmount);
 
         if (reset) {
@@ -162,10 +182,10 @@ contract AppFiducia is Fiducia {
             delete _tokenIdentifiersInfo[tokenId];
         } else {
             _tokenIdentifiers[msg.sender].add(tokenId);
-            _tokenIdentifiersInfo[tokenId] = TokenIdentifierInfo(to, token);
+            _tokenIdentifiersInfo[tokenId] = TokenIdentifierInfo(token, recipient);
         }
 
-        emit TokenTransferAllowed(msg.sender, token, to, maxAmount, allowedTimestamp);
+        emit TokenTransferAllowed(msg.sender, token, recipient, maxAmount, allowedTimestamp);
     }
 
     /**
