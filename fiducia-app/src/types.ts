@@ -34,8 +34,8 @@ export interface SetAllowedTokenTransferFormData {
   tokenAddress: string
   /** Address of the allowed recipient */
   recipientAddress: string
-  /** Maximum amount that can be transferred */
-  maxAmount: bigint
+  /** Amount that can be transferred */
+  amount: bigint
   /** Whether to reset/remove the allowance instead of adding it */
   reset: boolean
 }
@@ -51,7 +51,7 @@ export interface AllowedTxInfo {
   /** Operation type as string */
   operation: string
   /** Timestamp when the allowance becomes active (in milliseconds) */
-  allowedTimestamp: bigint
+  activeFrom: bigint
 }
 
 /**
@@ -62,10 +62,10 @@ export interface AllowedTokenTransferInfo {
   token: string
   /** Recipient address */
   recipient: string
-  /** Maximum allowed amount */
-  maxAmount: bigint
+  /** Allowed amount */
+  amount: bigint
   /** Timestamp when the allowance becomes active (in milliseconds) */
-  allowedTimestamp: bigint
+  activeFrom: bigint
 }
 
 /**
@@ -75,5 +75,5 @@ export interface CosignerInfo {
   /** Cosigner address */
   cosigner: string
   /** Timestamp when the cosigner becomes active (in milliseconds) */
-  allowedTimestamp: bigint
+  activeFrom: bigint
 }

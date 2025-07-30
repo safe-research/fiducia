@@ -92,24 +92,25 @@ contract AppFiducia is Fiducia {
         if (currentTxTimestamp == 0 || currentTxTimestamp > block.timestamp) {
             allowedTxs[safe][txId] = block.timestamp;
             _txIdentifiers[safe].add(txId);
-            _txIdentifiersInfo[txId] = TxIdentifierInfo(to, selector, operation);
+            _txIdentifiersInfo[txId] = TxIdentifierInfo({to: to, selector: selector, operation: operation});
             emit TxAllowed(safe, to, selector, operation, block.timestamp);
         }
 
         if (operation == Enum.Operation.Call && selector == IERC20.transfer.selector && data.length > 67) {
             // Decode the recipient and amount from the data.
             (address recipient, uint256 amount) = abi.decode(data[4:], (address, uint256));
-            bytes32 tokenIdentifier = keccak256(abi.encode(to, recipient, selector, operation));
-            // Set the token transfer info if not already present or maxAmount < amount.
-            TokenTransferInfo memory tokenTransferInfo = allowedTokenTransferInfos[safe][tokenIdentifier];
+            // Set the token transfer info if not already present or tokenTransferInfo.amount < amount.
+            TokenTransferInfo memory tokenTransferInfo = allowedTokenTransferInfos[safe][to][recipient];
             uint256 newTimestamp = tokenTransferInfo.activeFrom == 0 || tokenTransferInfo.activeFrom > block.timestamp
                 ? block.timestamp
                 : tokenTransferInfo.activeFrom;
-            uint256 newMaxAmount = tokenTransferInfo.maxAmount < amount ? amount : tokenTransferInfo.maxAmount;
-            allowedTokenTransferInfos[safe][tokenIdentifier] = TokenTransferInfo(newTimestamp, newMaxAmount);
-            _tokenIdentifiers[safe].add(tokenIdentifier);
-            _tokenIdentifiersInfo[tokenIdentifier] = TokenIdentifierInfo(to, recipient);
-            emit TokenTransferAllowed(safe, to, recipient, newMaxAmount, newTimestamp);
+            uint256 newAmount = tokenTransferInfo.amount < amount ? amount : tokenTransferInfo.amount;
+            allowedTokenTransferInfos[safe][to][recipient] =
+                TokenTransferInfo({activeFrom: newTimestamp, amount: newAmount});
+            bytes32 tokenId = keccak256(abi.encode(to, recipient));
+            _tokenIdentifiers[safe].add(tokenId);
+            _tokenIdentifiersInfo[tokenId] = TokenIdentifierInfo({token: to, recipient: recipient});
+            emit TokenTransferAllowed(safe, to, recipient, newAmount, newTimestamp);
         }
     }
 
@@ -159,7 +160,7 @@ contract AppFiducia is Fiducia {
             delete _txIdentifiersInfo[txId];
         } else {
             _txIdentifiers[msg.sender].add(txId);
-            _txIdentifiersInfo[txId] = TxIdentifierInfo(to, selector, operation);
+            _txIdentifiersInfo[txId] = TxIdentifierInfo({to: to, selector: selector, operation: operation});
         }
 
         emit TxAllowed(msg.sender, to, selector, operation, allowedTimestamp);
@@ -169,23 +170,24 @@ contract AppFiducia is Fiducia {
      * @notice Function to set an allowed token transfer.
      * @param token The address of the token contract.
      * @param recipient The address the tokens are sent to.
-     * @param maxAmount The maximum amount of tokens that can be transferred in a single transaction.
+     * @param amount The amount of tokens that can be transferred in a single transaction.
      * @dev This function allows setting a token transfer that can be executed without delay.
      */
-    function setAllowedTokenTransfer(address token, address recipient, uint256 maxAmount, bool reset) public override {
+    function setAllowedTokenTransfer(address token, address recipient, uint256 amount, bool reset) public override {
         uint256 allowedTimestamp = reset ? 0 : _checkGuardsSet() ? block.timestamp + DELAY : block.timestamp;
-        bytes32 tokenId = keccak256(abi.encode(token, recipient, IERC20.transfer.selector, Enum.Operation.Call));
-        allowedTokenTransferInfos[msg.sender][tokenId] = TokenTransferInfo(allowedTimestamp, maxAmount);
+        allowedTokenTransferInfos[msg.sender][token][recipient] =
+            TokenTransferInfo({activeFrom: allowedTimestamp, amount: amount});
 
+        bytes32 tokenId = keccak256(abi.encode(token, recipient));
         if (reset) {
             _tokenIdentifiers[msg.sender].remove(tokenId);
             delete _tokenIdentifiersInfo[tokenId];
         } else {
             _tokenIdentifiers[msg.sender].add(tokenId);
-            _tokenIdentifiersInfo[tokenId] = TokenIdentifierInfo(token, recipient);
+            _tokenIdentifiersInfo[tokenId] = TokenIdentifierInfo({token: token, recipient: recipient});
         }
 
-        emit TokenTransferAllowed(msg.sender, token, recipient, maxAmount, allowedTimestamp);
+        emit TokenTransferAllowed(msg.sender, token, recipient, amount, allowedTimestamp);
     }
 
     /**

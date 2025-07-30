@@ -5,6 +5,7 @@ A React-based Safe app for managing the Fiducia protocol - a transaction guard a
 ## Overview
 
 Fiducia is a security layer for Safe wallets that allows users to:
+
 - Set up transaction guards with time-delayed activation
 - Configure allowed transactions and token transfers
 - Establish cosigners for additional security
@@ -13,7 +14,7 @@ Fiducia is a security layer for Safe wallets that allows users to:
 ## Features
 
 - **Transaction Guards**: Configure which transactions are allowed
-- **Token Transfer Controls**: Set limits on token transfers to specific recipients  
+- **Token Transfer Controls**: Set limits on token transfers to specific recipients
 - **Cosigner Management**: Add additional signers for transactions
 - **Time-Delayed Activation**: All security changes have time delays before becoming active
 - **Guard Removal**: Securely remove guards with time delays
@@ -27,7 +28,7 @@ Fiducia is a security layer for Safe wallets that allows users to:
 
 ### Prerequisites
 
-- Node.js 18+ 
+- Node.js 18+
 - npm or yarn
 
 ### Setup
