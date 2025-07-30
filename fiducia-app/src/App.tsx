@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import './App.css'
 import type { BaseTransaction } from '@safe-global/safe-apps-sdk'
-import { useSafeAppsSDK } from '@safe-global/safe-apps-react-sdk'
 import SafeAppsSDK from '@safe-global/safe-apps-sdk'
 import { ethers, ZeroAddress } from 'ethers'
 import Button from '@mui/material/Button'
@@ -23,8 +22,6 @@ import {
 import {
   CONTRACT_INTERFACE_ABI,
   GUARD_STORAGE_SLOT,
-  FIDUCIA_ADDRESS_SEPOLIA,
-  FIDUCIA_ADDRESS_GNOSIS,
   MILLISECONDS_IN_SECOND,
   MULTISEND_CALL_ONLY,
 } from './constants'
@@ -32,7 +29,16 @@ import type {
   SetAllowedTokenTransferFormData,
   SetAllowedTxFormData,
   SetCosignerFormData,
+  AllowedTxInfo,
+  AllowedTokenTransferInfo,
+  CosignerInfo,
 } from './types'
+import {
+  isValidAddress,
+  validateSelector,
+  isValidOperation,
+} from './utils/validation'
+import { useSafeConnection } from './hooks/useSafeConnection'
 
 const CONTRACT_INTERFACE = new ethers.Interface(CONTRACT_INTERFACE_ABI)
 
@@ -56,44 +62,32 @@ const call = async (
 function App() {
   const [loading, setLoading] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
-  const [fiduciaAddress, setFiduciaAddress] = useState<string>()
   const [txGuard, setTxGuard] = useState<string | null>(null)
-  // const [moduleGuard, setModuleGuard] = useState<string | null>(null)
   const [fiduciaInSafe, setFiduciaInSafe] = useState<boolean>(false)
   const [removalTimestamp, setRemovalTimestamp] = useState<bigint>(0n)
-  const [allowedTxInfo, setAllowedTxInfo] = useState<
-    {
-      to: string
-      selector: string
-      operation: string
-      allowedTimestamp: bigint
-    }[]
-  >([])
+  const [allowedTxInfo, setAllowedTxInfo] = useState<AllowedTxInfo[]>([])
   const [allowedTokenTransferInfo, setAllowedTokenTransferInfo] = useState<
-    {
-      token: string
-      recipient: string
-      maxAmount: bigint
-      allowedTimestamp: bigint
-    }[]
+    AllowedTokenTransferInfo[]
   >([])
-  const [cosignerInfo, setCosignerInfo] = useState<{
-    cosigner: string
-    allowedTimestamp: bigint
-  }>()
-  const useSafeSdk = useSafeAppsSDK()
-  const { safe, sdk } = useSafeSdk
+  const [cosignerInfo, setCosignerInfo] = useState<CosignerInfo>()
 
-  const safeConnected = useCallback(() => {
-    setLoading(true)
-    setErrorMessage(null)
-    if (!safe) {
-      setErrorMessage('No Safe connected')
-      setLoading(false)
-      return
+  // Use the custom hook for Safe connection management
+  const {
+    safe,
+    sdk,
+    fiduciaAddress,
+    isConnected,
+    error: connectionError,
+  } = useSafeConnection()
+
+  // Handle connection errors from the custom hook
+  useEffect(() => {
+    if (connectionError) {
+      setErrorMessage(connectionError)
+    } else {
+      setErrorMessage(null)
     }
-    setLoading(false)
-  }, [safe])
+  }, [connectionError])
 
   const fetchTxGuardInfo = useCallback(async () => {
     setLoading(true)
@@ -116,20 +110,6 @@ function App() {
       setLoading(false)
     }
   }, [safe.safeAddress, sdk])
-
-  // const fetchModuleGuardInfo = useCallback(async () => {
-  //   setLoading(true)
-  //   setErrorMessage(null)
-  //   try {
-  //     // Get the Module Guard
-  //     const result = ethers.getAddress("0x" + (await call(sdk, safe.safeAddress, "getStorageAt", [MODULE_GUARD_STORAGE_SLOT, 1])).slice(26))
-  //     setModuleGuard(result)
-  //   } catch (error) {
-  //     setErrorMessage('Failed to fetch module guard with error: ' + error)
-  //   } finally {
-  //     setLoading(false)
-  //   }
-  // }, [safe.safeAddress, sdk])
 
   const fetchGuardRemovalInfo = useCallback(async () => {
     setLoading(true)
@@ -275,50 +255,36 @@ function App() {
     }
   }, [fiduciaAddress, safe.safeAddress, sdk])
 
-  const selectFiduciaAddress = useCallback(async () => {
-    setLoading(true)
-    setErrorMessage(null)
-    const chainId = (await sdk.safe.getInfo()).chainId
-    if (chainId === 100) {
-      setFiduciaAddress(FIDUCIA_ADDRESS_GNOSIS)
-    } else if (chainId === 11155111) {
-      setFiduciaAddress(FIDUCIA_ADDRESS_SEPOLIA)
-    } else {
-      setLoading(false)
-      return
-    }
-    setLoading(false)
-  }, [sdk.safe])
-
+  // Fetch all necessary data when connected and fiduciaAddress is available
   useEffect(() => {
-    safeConnected()
-    selectFiduciaAddress()
-    if (safe && safe.safeAddress && fiduciaAddress) {
+    if (isConnected && fiduciaAddress && safe?.safeAddress) {
+      fetchTxGuardInfo()
       fetchGuardRemovalInfo()
       fetchCurrentAllowedTxs()
       fetchCurrentAllowedTokenTransfers()
       fetchCurrentCosigner()
-      fetchTxGuardInfo()
-      // fetchModuleGuardInfo()
-      if (txGuard == fiduciaAddress /* && moduleGuard == fiduciaAddress*/) {
-        setFiduciaInSafe(true)
-      }
     } else {
       setLoading(false)
     }
   }, [
-    safe,
-    sdk,
-    safeConnected,
+    isConnected,
+    fiduciaAddress,
+    safe?.safeAddress,
+    fetchTxGuardInfo,
     fetchGuardRemovalInfo,
     fetchCurrentAllowedTxs,
     fetchCurrentAllowedTokenTransfers,
     fetchCurrentCosigner,
-    selectFiduciaAddress,
-    fiduciaAddress,
-    fetchTxGuardInfo,
-    txGuard,
   ])
+
+  // Effect to determine if Fiducia is in Safe
+  useEffect(() => {
+    if (txGuard && fiduciaAddress) {
+      setFiduciaInSafe(txGuard === fiduciaAddress)
+    } else {
+      setFiduciaInSafe(false)
+    }
+  }, [txGuard, fiduciaAddress])
 
   const activateFiducia = useCallback(
     async (activate: boolean) => {
@@ -350,11 +316,6 @@ function App() {
               guardAddress,
             ]),
           },
-          // {
-          //   to: safe.safeAddress,
-          //   value: "0",
-          //   data: CONTRACT_INTERFACE.encodeFunctionData("setModuleGuard", [guardAddress])
-          // }
         ]
         await sdk.txs.send({
           txs,
@@ -387,12 +348,7 @@ function App() {
       await sdk.txs.send({
         txs,
       })
-      // Refresh the removal timestamp after scheduling
       await fetchGuardRemovalInfo()
-      // while (removalTimestamp == 0n) {
-      //   await new Promise(resolve => setTimeout(resolve, 60000)) // Wait for 1 minute
-      //   await fetchGuardRemovalInfo() // Re-fetch the removal timestamp
-      // }
     } catch (error) {
       setErrorMessage('Failed to schedule fiducia removal: ' + error)
     } finally {
@@ -404,29 +360,38 @@ function App() {
     async (formData: SetAllowedTxFormData) => {
       setLoading(true)
       setErrorMessage(null)
+
       if (!fiduciaAddress) {
         setErrorMessage('Fiducia address not available')
         setLoading(false)
         return
       }
-      if (!formData.selector) {
-        formData.selector = '0x00000000' // Default to a no-op selector if not provided
-      }
-      if (formData.selector.length !== 10) {
-        setErrorMessage('Selector must be 4 bytes (8 hex characters)')
+
+      // Validate 'to' address
+      if (!isValidAddress(formData.to)) {
+        setErrorMessage('Invalid "To" address format')
         setLoading(false)
         return
       }
-      if (!formData.selector.startsWith('0x')) {
-        setErrorMessage('Selector must start with 0x')
+
+      // Validate selector
+      const selectorValidation = validateSelector(formData.selector)
+      if (!selectorValidation.isValid) {
+        setErrorMessage(selectorValidation.error!)
         setLoading(false)
         return
       }
-      if (formData.operation !== 0 && formData.operation !== 1) {
+
+      // Validate operation
+      if (!isValidOperation(formData.operation)) {
         setErrorMessage('Operation must be Call (0) or DelegateCall (1)')
         setLoading(false)
         return
       }
+
+      // Set default selector if empty
+      const selector = formData.selector || '0x00000000'
+
       try {
         const txs: BaseTransaction[] = [
           {
@@ -434,15 +399,13 @@ function App() {
             value: '0',
             data: CONTRACT_INTERFACE.encodeFunctionData('setAllowedTx', [
               ethers.getAddress(formData.to),
-              formData.selector,
+              selector,
               formData.operation,
               formData.reset,
             ]),
           },
         ]
-        await sdk.txs.send({
-          txs,
-        })
+        await sdk.txs.send({ txs })
       } catch (error) {
         setErrorMessage('Failed to set Tx allowance: ' + error)
       } finally {
@@ -456,11 +419,27 @@ function App() {
     async (formData: SetAllowedTokenTransferFormData) => {
       setLoading(true)
       setErrorMessage(null)
+
       if (!fiduciaAddress) {
         setErrorMessage('Fiducia address not available')
         setLoading(false)
         return
       }
+
+      // Validate token address
+      if (!isValidAddress(formData.tokenAddress)) {
+        setErrorMessage('Invalid token address format')
+        setLoading(false)
+        return
+      }
+
+      // Validate recipient address
+      if (!isValidAddress(formData.recipientAddress)) {
+        setErrorMessage('Invalid recipient address format')
+        setLoading(false)
+        return
+      }
+
       try {
         const txs: BaseTransaction[] = [
           {
@@ -477,9 +456,7 @@ function App() {
             ),
           },
         ]
-        await sdk.txs.send({
-          txs,
-        })
+        await sdk.txs.send({ txs })
       } catch (error) {
         setErrorMessage('Failed to set token transfer allowance: ' + error)
       } finally {
@@ -493,28 +470,35 @@ function App() {
     async (formData: SetCosignerFormData) => {
       setLoading(true)
       setErrorMessage(null)
+
       if (!fiduciaAddress) {
         setErrorMessage('Fiducia address not available')
         setLoading(false)
         return
       }
-      if (!formData.cosignerAddress) {
-        formData.cosignerAddress = ZeroAddress
+
+      // Set default to ZeroAddress if not provided
+      const cosignerAddress = formData.cosignerAddress || ZeroAddress
+
+      // Validate cosigner address if provided and not zero address
+      if (cosignerAddress !== ZeroAddress && !isValidAddress(cosignerAddress)) {
+        setErrorMessage('Invalid cosigner address format')
+        setLoading(false)
+        return
       }
+
       try {
         const txs: BaseTransaction[] = [
           {
             to: fiduciaAddress,
             value: '0',
             data: CONTRACT_INTERFACE.encodeFunctionData('setCosigner', [
-              ethers.getAddress(formData.cosignerAddress),
+              ethers.getAddress(cosignerAddress),
               formData.reset,
             ]),
           },
         ]
-        await sdk.txs.send({
-          txs,
-        })
+        await sdk.txs.send({ txs })
       } catch (error) {
         setErrorMessage('Failed to set cosigner: ' + error)
       } finally {
@@ -535,7 +519,7 @@ function App() {
       <div className="card">
         {loading ? (
           <p>Loading...</p>
-        ) : !useSafeSdk.connected ? (
+        ) : !isConnected ? (
           <div className="error">Not connected to any Safe</div>
         ) : !fiduciaAddress ? (
           <div className="error">Fiducia not available in this chain</div>

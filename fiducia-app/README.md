@@ -1,69 +1,62 @@
-# React + TypeScript + Vite
+# Fiducia App
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A React-based Safe app for managing the Fiducia protocol - a transaction guard and security framework for Safe wallets.
 
-Currently, two official plugins are available:
+## Overview
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+Fiducia is a security layer for Safe wallets that allows users to:
+- Set up transaction guards with time-delayed activation
+- Configure allowed transactions and token transfers
+- Establish cosigners for additional security
+- Schedule guard removal with time delays
 
-## Expanding the ESLint configuration
+## Features
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+- **Transaction Guards**: Configure which transactions are allowed
+- **Token Transfer Controls**: Set limits on token transfers to specific recipients  
+- **Cosigner Management**: Add additional signers for transactions
+- **Time-Delayed Activation**: All security changes have time delays before becoming active
+- **Guard Removal**: Securely remove guards with time delays
 
-```js
-export default tseslint.config([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+## Supported Networks
 
-      // Remove tseslint.configs.recommended and replace with this
-      ...tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      ...tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      ...tseslint.configs.stylisticTypeChecked,
+- **Sepolia Testnet** (Chain ID: 11155111)
+- **Gnosis Chain** (Chain ID: 100)
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+## Development
+
+### Prerequisites
+
+- Node.js 18+ 
+- npm or yarn
+
+### Setup
+
+```bash
+# Install dependencies
+npm install
+
+# Start development server
+npm run dev
+
+# Build for production
+npm run build
+
+# Run linting
+npm run lint
+
+# Format code
+npm run format
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+## Usage
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+1. Connect your Safe wallet to the app
+2. Activate Fiducia guard on your Safe
+3. Configure allowed transactions and token transfers
+4. Set up cosigners if needed
+5. Manage guard settings as needed
 
-export default tseslint.config([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+## Smart Contract Integration
+
+The app interacts with Fiducia smart contracts deployed on supported networks. Contract addresses and ABIs are defined in `src/constants.ts`.
