@@ -509,9 +509,8 @@ contract FiduciaTest is Test {
         emit Fiducia.TokenTransferAllowed(address(safe), address(testToken), recipient, maxAmount, block.timestamp);
         fiducia.setAllowedTokenTransfer(address(testToken), recipient, maxAmount, false);
 
-        bytes32 tokenId =
-            keccak256(abi.encode(address(testToken), recipient, testToken.transfer.selector, Enum.Operation.Call));
-        (uint256 activeFrom, uint256 storedMaxAmount) = fiducia.allowedTokenTransferInfos(address(safe), tokenId);
+        (uint256 activeFrom, uint256 storedMaxAmount) =
+            fiducia.allowedTokenTransferInfos(address(safe), address(testToken), recipient);
         assertEq(activeFrom, block.timestamp);
         assertEq(storedMaxAmount, maxAmount);
     }
@@ -530,9 +529,8 @@ contract FiduciaTest is Test {
         );
         fiducia.setAllowedTokenTransfer(address(testToken), recipient, maxAmount, false);
 
-        bytes32 tokenId =
-            keccak256(abi.encode(address(testToken), recipient, testToken.transfer.selector, Enum.Operation.Call));
-        (uint256 activeFrom, uint256 storedMaxAmount) = fiducia.allowedTokenTransferInfos(address(safe), tokenId);
+        (uint256 activeFrom, uint256 storedMaxAmount) =
+            fiducia.allowedTokenTransferInfos(address(safe), address(testToken), recipient);
         assertEq(activeFrom, block.timestamp + DELAY);
         assertEq(storedMaxAmount, maxAmount);
     }
@@ -827,9 +825,8 @@ contract FiduciaTest is Test {
         vm.prank(address(safe));
         fiducia.setAllowedTokenTransfer(address(testToken), recipient, maxAmount, false);
 
-        bytes32 tokenId =
-            keccak256(abi.encode(address(testToken), recipient, testToken.transfer.selector, Enum.Operation.Call));
-        (uint256 activeFrom, uint256 storedMaxAmount) = fiducia.allowedTokenTransferInfos(address(safe), tokenId);
+        (uint256 activeFrom, uint256 storedMaxAmount) =
+            fiducia.allowedTokenTransferInfos(address(safe), address(testToken), recipient);
         // Verify it was set with current timestamp
         assertEq(activeFrom, block.timestamp);
         assertEq(storedMaxAmount, maxAmount);
@@ -840,7 +837,7 @@ contract FiduciaTest is Test {
         emit Fiducia.TokenTransferAllowed(address(safe), address(testToken), recipient, maxAmount, 0);
         fiducia.setAllowedTokenTransfer(address(testToken), recipient, maxAmount, true);
 
-        (activeFrom, storedMaxAmount) = fiducia.allowedTokenTransferInfos(address(safe), tokenId);
+        (activeFrom, storedMaxAmount) = fiducia.allowedTokenTransferInfos(address(safe), address(testToken), recipient);
         // Verify it was reset to 0 but amount remains
         assertEq(activeFrom, 0);
         assertEq(storedMaxAmount, maxAmount);
@@ -857,9 +854,8 @@ contract FiduciaTest is Test {
         vm.prank(address(safe));
         fiducia.setAllowedTokenTransfer(address(testToken), recipient, maxAmount, false);
 
-        bytes32 tokenId =
-            keccak256(abi.encode(address(testToken), recipient, testToken.transfer.selector, Enum.Operation.Call));
-        (uint256 activeFrom, uint256 storedMaxAmount) = fiducia.allowedTokenTransferInfos(address(safe), tokenId);
+        (uint256 activeFrom, uint256 storedMaxAmount) =
+            fiducia.allowedTokenTransferInfos(address(safe), address(testToken), recipient);
         // Verify it was set with delay
         assertEq(activeFrom, block.timestamp + DELAY);
         assertEq(storedMaxAmount, maxAmount);
@@ -870,7 +866,7 @@ contract FiduciaTest is Test {
         emit Fiducia.TokenTransferAllowed(address(safe), address(testToken), recipient, maxAmount, 0);
         fiducia.setAllowedTokenTransfer(address(testToken), recipient, maxAmount, true);
 
-        (activeFrom, storedMaxAmount) = fiducia.allowedTokenTransferInfos(address(safe), tokenId);
+        (activeFrom, storedMaxAmount) = fiducia.allowedTokenTransferInfos(address(safe), address(testToken), recipient);
         // Verify it was reset to 0 but amount remains
         assertEq(activeFrom, 0);
         assertEq(storedMaxAmount, maxAmount);

@@ -190,27 +190,48 @@ function App() {
         ethers.getAddress(safe.safeAddress),
       ])
 
-      // Process the result - combine both calls in a single Promise.all
+      if (result.length === 0) {
+        setAllowedTokenTransferInfo([])
+        setLoading(false)
+        return
+      }
+
+      // First, get token info for all identifiers
+      const tokenInfos = await Promise.all(
+        result.map(async (tokenId: string) => {
+          const tokenInfo = await call(
+            sdk,
+            fiduciaAddress,
+            'getTokenIdentifierInfo',
+            [tokenId]
+          )
+          return tokenInfo
+        })
+      )
+
+      // Then, get amount & timestamp info using the token & recipient info
       const allowedTokenTxs = await Promise.all(
-        result.map(async (txId: string) => {
-          const [tokenInfo, txInfo] = await Promise.all([
-            call(sdk, fiduciaAddress, 'allowedTokenTransferInfos', [
+        tokenInfos.map(async tokenInfo => {
+          const result = await call(
+            sdk,
+            fiduciaAddress,
+            'allowedTokenTransferInfos',
+            [
               ethers.getAddress(safe.safeAddress),
-              txId,
-            ]),
-            call(sdk, fiduciaAddress, 'getTokenIdentifierInfo', [txId]),
-          ])
+              tokenInfo.token,
+              tokenInfo.recipient,
+            ]
+          )
 
           return {
-            token: txInfo.to,
-            recipient: txInfo.recipient,
-            maxAmount:
-              tokenInfo.maxAmount /
-              10n ** (await call(sdk, txInfo.to, 'decimals', [])),
-            allowedTimestamp: tokenInfo.activeFrom * MILLISECONDS_IN_SECOND,
+            token: tokenInfo.token,
+            recipient: tokenInfo.recipient,
+            amount: result.amount,
+            activeFrom: result.activeFrom * MILLISECONDS_IN_SECOND,
           }
         })
       )
+
       setAllowedTokenTransferInfo(allowedTokenTxs)
     } catch (error) {
       setErrorMessage(
@@ -236,16 +257,16 @@ function App() {
         ethers.getAddress(safe.safeAddress),
       ])
       // Only one cosigner can be set in contract at a time for a Safe
-      // Check if the allowedTimestamp is greater than 0, if so, set the cosigner info
-      if (result.allowedTimestamp > 0) {
+      // Check if the activeFrom is greater than 0, if so, set the cosigner info
+      if (result.activeFrom > 0) {
         setCosignerInfo({
           cosigner: result.cosigner,
-          allowedTimestamp: result.allowedTimestamp * MILLISECONDS_IN_SECOND,
+          activeFrom: result.activeFrom * MILLISECONDS_IN_SECOND,
         })
       } else {
         setCosignerInfo({
           cosigner: ZeroAddress,
-          allowedTimestamp: 0n,
+          activeFrom: 0n,
         })
       }
     } catch (error) {
@@ -450,7 +471,7 @@ function App() {
               [
                 ethers.getAddress(formData.tokenAddress),
                 ethers.getAddress(formData.recipientAddress),
-                formData.maxAmount,
+                formData.amount,
                 formData.reset,
               ]
             ),
@@ -598,8 +619,8 @@ function App() {
               <h2>Set Cosigner</h2>
               {cosignerInfo && cosignerInfo.cosigner !== ZeroAddress ? (
                 <>
-                  {cosignerInfo.allowedTimestamp > 0 &&
-                  cosignerInfo.allowedTimestamp <= BigInt(Date.now()) ? (
+                  {cosignerInfo.activeFrom > 0 &&
+                  cosignerInfo.activeFrom <= BigInt(Date.now()) ? (
                     <Alert severity="info" style={{ margin: '1em' }}>
                       Cosigner is set to {cosignerInfo.cosigner}.
                     </Alert>
@@ -607,7 +628,7 @@ function App() {
                     <Alert severity="warning" style={{ margin: '1em' }}>
                       Cosigner is set but will be activated at{' '}
                       {new Date(
-                        Number(cosignerInfo.allowedTimestamp)
+                        Number(cosignerInfo.activeFrom)
                       ).toLocaleString()}
                       .
                     </Alert>
@@ -838,11 +859,11 @@ function App() {
                             <TableCell>{tx.selector}</TableCell>
                             <TableCell>{tx.operation}</TableCell>
                             <TableCell>
-                              {tx.allowedTimestamp < BigInt(Date.now())
+                              {tx.activeFrom < BigInt(Date.now())
                                 ? 'Yes'
                                 : 'Will be active at ' +
                                   new Date(
-                                    Number(tx.allowedTimestamp)
+                                    Number(tx.activeFrom)
                                   ).toLocaleString()}
                             </TableCell>
                             <TableCell align="right">
@@ -906,10 +927,10 @@ function App() {
                         'recipientAddress'
                       ) as HTMLInputElement
                     ).value,
-                    maxAmount: BigInt(
+                    amount: BigInt(
                       (
                         e.currentTarget.elements.namedItem(
-                          'maxAmount'
+                          'amount'
                         ) as HTMLInputElement
                       ).value
                     ),
@@ -1037,13 +1058,13 @@ function App() {
                               {tx.token}
                             </TableCell>
                             <TableCell>{tx.recipient}</TableCell>
-                            <TableCell>{tx.maxAmount.toString()}</TableCell>
+                            <TableCell>{tx.amount.toString()}</TableCell>
                             <TableCell>
-                              {tx.allowedTimestamp < BigInt(Date.now())
+                              {tx.activeFrom < BigInt(Date.now())
                                 ? 'Yes'
                                 : 'Will be active at ' +
                                   new Date(
-                                    Number(tx.allowedTimestamp)
+                                    Number(tx.activeFrom)
                                   ).toLocaleString()}
                             </TableCell>
                             <TableCell align="right">
@@ -1054,7 +1075,7 @@ function App() {
                                   setAllowedTokenTransfer({
                                     tokenAddress: tx.token,
                                     recipientAddress: tx.recipient,
-                                    maxAmount: tx.maxAmount,
+                                    amount: tx.amount,
                                     reset: true,
                                   })
                                 }}

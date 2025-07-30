@@ -13,12 +13,12 @@ import { ethers } from 'ethers'
 
 /** Fiducia contract address on Sepolia testnet */
 export const FIDUCIA_ADDRESS_SEPOLIA = ethers.getAddress(
-  '0x7bdc54da3dfe4675a43048b3bb2e5cd7fa809283'
+  '0x016a4389ac2c9c2468f98f598e1129a697207312'
 )
 
 /** Fiducia contract address on Gnosis Chain */
 export const FIDUCIA_ADDRESS_GNOSIS = ethers.getAddress(
-  '0x7bdc54da3dfe4675a43048b3bb2e5cd7fa809283'
+  '0x016a4389ac2c9c2468f98f598e1129a697207312'
 )
 
 /** Safe MultiSendCallOnly contract address */
@@ -55,16 +55,16 @@ export const CONTRACT_INTERFACE_ABI = [
   'function scheduleGuardRemoval() public',
   'function setAllowedTx(address to, bytes4 selector, uint8 operation, bool reset) public',
   'function setCosigner(address cosigner, bool reset) public',
-  'function setAllowedTokenTransfer(address token, address to, uint256 maxAmount, bool reset) public',
+  'function setAllowedTokenTransfer(address token, address recipient, uint256 amount, bool reset) public',
 
   // Fiducia View Functions
   'function getTxIdentifierInfo(bytes32 txIdentifier) external view returns (tuple(address to, bytes4 selector, uint8 operation) memory)',
   'function getTxIdentifiers(address account) external view returns (bytes32[] memory)',
-  'function getTokenIdentifierInfo(bytes32 tokenId) external view returns (tuple(address to, address recipient) memory)',
+  'function getTokenIdentifierInfo(bytes32 tokenId) external view returns (tuple(address token, address recipient) memory)',
   'function getTokenIdentifiers(address account) external view returns (bytes32[] memory)',
   'function allowedTxs(address safe, bytes32 txIdentifier) public view returns (uint256 timestamp)',
-  'function allowedTokenTransferInfos(address safe, bytes32 tokenIdentifier) public view returns (tuple(uint256 activeFrom, uint256 maxAmount) memory)',
-  'function cosignerInfos(address safe) public view returns (tuple(uint256 allowedTimestamp, address cosigner) memory)',
+  'function allowedTokenTransferInfos(address safe, address token, address recipient) public view returns (tuple(uint256 activeFrom, uint256 amount) memory)',
+  'function cosignerInfos(address safe) public view returns (tuple(uint256 activeFrom, address cosigner) memory)',
 
   // Other Functions
   'function multiSend(bytes memory transactions) public payable',

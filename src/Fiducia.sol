@@ -29,12 +29,12 @@ contract Fiducia is ITransactionGuard, IModuleGuard {
     /**
      * @notice The TokenTransferInfo struct holds information about a token transfer.
      * @param activeFrom The timestamp from which the token transfer is considered allowed.
-     * @param maxAmount The maximum amount of tokens that can be transferred in a single transaction.
+     * @param amount The amount of tokens that can be transferred in a single transaction.
      * @dev This struct is used to manage token transfers and their limits.
      */
     struct TokenTransferInfo {
         uint256 activeFrom;
-        uint256 maxAmount;
+        uint256 amount;
     }
 
     /**
@@ -68,17 +68,18 @@ contract Fiducia is ITransactionGuard, IModuleGuard {
      * @notice The mapping of allowed transaction types.
      * @dev safe The address of the safe.
      *      txIdentifier The identifier for the transaction, is a hash of the transaction details (to, selector, operation)
-     *      timestamp The timestamp when the transaction is allowed.
+     *      activeFrom The timestamp when the transaction is active.
      */
-    mapping(address safe => mapping(bytes32 txIdentifier => uint256 timestamp)) public allowedTxs;
+    mapping(address safe => mapping(bytes32 txIdentifier => uint256 activeFrom)) public allowedTxs;
 
     /**
-     * @notice The mapping of allowed token transactions.
+     * @notice The mapping of allowed token transactions for particular recipients.
      * @dev safe The address of the safe.
-     *      tokenIdentifier The identifier for the token transfer, is a hash of the token address & recipient address.
-     *      tokenTransferInfo The information about the token transfer, which includes the activeFrom timestamp and maxAmount.
+     *      token The address of the token contract.
+     *      recipient The address the tokens are sent to.
+     *      tokenTransferInfo The information about the token transfer, which includes the activeFrom timestamp and amount.
      */
-    mapping(address safe => mapping(bytes32 tokenIdentifier => TokenTransferInfo tokenTransferInfo)) public
+    mapping(address safe => mapping(address token => mapping(address recipient => TokenTransferInfo))) public
         allowedTokenTransferInfos;
 
     /**
@@ -239,8 +240,8 @@ contract Fiducia is ITransactionGuard, IModuleGuard {
         bytes32 txId = keccak256(abi.encode(to, selector, operation));
 
         // Add the txId to allowed transactions immediately if not already present.
-        uint256 currentTxTimestamp = allowedTxs[safe][txId];
-        if (currentTxTimestamp == 0 || currentTxTimestamp > block.timestamp) {
+        uint256 currentTxActiveFrom = allowedTxs[safe][txId];
+        if (currentTxActiveFrom == 0 || currentTxActiveFrom > block.timestamp) {
             allowedTxs[safe][txId] = block.timestamp;
             emit TxAllowed(safe, to, selector, operation, block.timestamp);
         }
@@ -248,15 +249,15 @@ contract Fiducia is ITransactionGuard, IModuleGuard {
         if (operation == Enum.Operation.Call && selector == IERC20.transfer.selector && data.length > 67) {
             // Decode the recipient and amount from the data.
             (address recipient, uint256 amount) = abi.decode(data[4:], (address, uint256));
-            bytes32 tokenIdentifier = keccak256(abi.encode(to, recipient, selector, operation));
-            // Set the token transfer info if not already present or maxAmount < amount.
-            TokenTransferInfo memory tokenTransferInfo = allowedTokenTransferInfos[safe][tokenIdentifier];
+            // Set the token transfer info if not already present or tokenTransferInfo.amount < amount.
+            TokenTransferInfo memory tokenTransferInfo = allowedTokenTransferInfos[safe][to][recipient];
             uint256 newTimestamp = tokenTransferInfo.activeFrom == 0 || tokenTransferInfo.activeFrom > block.timestamp
                 ? block.timestamp
                 : tokenTransferInfo.activeFrom;
-            uint256 newMaxAmount = tokenTransferInfo.maxAmount < amount ? amount : tokenTransferInfo.maxAmount;
-            allowedTokenTransferInfos[safe][tokenIdentifier] = TokenTransferInfo(newTimestamp, newMaxAmount);
-            emit TokenTransferAllowed(safe, to, recipient, newMaxAmount, newTimestamp);
+            uint256 newAmount = tokenTransferInfo.amount < amount ? amount : tokenTransferInfo.amount;
+            allowedTokenTransferInfos[safe][to][recipient] =
+                TokenTransferInfo({activeFrom: newTimestamp, amount: newAmount});
+            emit TokenTransferAllowed(safe, to, recipient, newAmount, newTimestamp);
         }
     }
 
@@ -391,16 +392,15 @@ contract Fiducia is ITransactionGuard, IModuleGuard {
         Enum.Operation operation
     ) internal view returns (bool allowed) {
         // Only check ERC20 transfers with sufficient data length
-        if (selector != IERC20.transfer.selector || data.length <= 67) {
+        if (selector != IERC20.transfer.selector || operation != Enum.Operation.Call || data.length <= 67) {
             return false;
         }
 
         (address recipient, uint256 amount) = abi.decode(data[4:], (address, uint256));
-        bytes32 tokenIdentifier = keccak256(abi.encode(to, recipient, selector, operation));
-        TokenTransferInfo memory tokenTransferInfo = allowedTokenTransferInfos[safe][tokenIdentifier];
+        TokenTransferInfo memory tokenTransferInfo = allowedTokenTransferInfos[safe][to][recipient];
 
         // Check if token transfer is configured and active
-        if (tokenTransferInfo.maxAmount == 0) {
+        if (tokenTransferInfo.amount == 0) {
             return false;
         }
 
@@ -408,7 +408,7 @@ contract Fiducia is ITransactionGuard, IModuleGuard {
             tokenTransferInfo.activeFrom > 0 && tokenTransferInfo.activeFrom <= block.timestamp,
             TokenTransferNotAllowed()
         );
-        require(amount <= tokenTransferInfo.maxAmount, TokenTransferExceedsLimit());
+        require(amount <= tokenTransferInfo.amount, TokenTransferExceedsLimit());
 
         return true;
     }
@@ -608,11 +608,11 @@ contract Fiducia is ITransactionGuard, IModuleGuard {
      * @dev This function allows setting a transaction type that can be executed without delay.
      */
     function setAllowedTx(address to, bytes4 selector, Enum.Operation operation, bool reset) public virtual {
-        uint256 allowedTimestamp = reset ? 0 : _checkGuardsSet() ? block.timestamp + DELAY : block.timestamp;
+        uint256 activeFrom = reset ? 0 : _checkGuardsSet() ? block.timestamp + DELAY : block.timestamp;
         bytes32 txId = keccak256(abi.encode(to, selector, operation));
-        allowedTxs[msg.sender][txId] = allowedTimestamp;
+        allowedTxs[msg.sender][txId] = activeFrom;
 
-        emit TxAllowed(msg.sender, to, selector, operation, allowedTimestamp);
+        emit TxAllowed(msg.sender, to, selector, operation, activeFrom);
     }
 
     /**
@@ -622,26 +622,25 @@ contract Fiducia is ITransactionGuard, IModuleGuard {
      * @dev This function allows setting a cosigner that can approve transactions without delay.
      */
     function setCosigner(address cosigner, bool reset) public virtual {
-        uint256 allowedTimestamp = reset ? 0 : _checkGuardsSet() ? block.timestamp + DELAY : block.timestamp;
-        cosignerInfos[msg.sender] = CosignerInfo(allowedTimestamp, cosigner);
+        uint256 activeFrom = reset ? 0 : _checkGuardsSet() ? block.timestamp + DELAY : block.timestamp;
+        cosignerInfos[msg.sender] = CosignerInfo({activeFrom: activeFrom, cosigner: cosigner});
 
-        emit CosignerSet(msg.sender, cosigner, allowedTimestamp);
+        emit CosignerSet(msg.sender, cosigner, activeFrom);
     }
 
     /**
      * @notice Function to set an allowed token transfer.
      * @param token The address of the token contract.
      * @param recipient The address the tokens are sent to.
-     * @param maxAmount The maximum amount of tokens that can be transferred in a single transaction.
+     * @param amount The amount of tokens that can be transferred in a single transaction.
      * @param reset Whether to reset the timestamp to 0 (immediate allowance).
      * @dev This function allows setting a token transfer that can be executed without delay.
      */
-    function setAllowedTokenTransfer(address token, address recipient, uint256 maxAmount, bool reset) public virtual {
-        uint256 allowedTimestamp = reset ? 0 : _checkGuardsSet() ? block.timestamp + DELAY : block.timestamp;
-        bytes32 tokenId = keccak256(abi.encode(token, recipient, IERC20.transfer.selector, Enum.Operation.Call));
-        allowedTokenTransferInfos[msg.sender][tokenId] = TokenTransferInfo(allowedTimestamp, maxAmount);
+    function setAllowedTokenTransfer(address token, address recipient, uint256 amount, bool reset) public virtual {
+        uint256 activeFrom = reset ? 0 : _checkGuardsSet() ? block.timestamp + DELAY : block.timestamp;
+        allowedTokenTransferInfos[msg.sender][token][recipient] = TokenTransferInfo(activeFrom, amount);
 
-        emit TokenTransferAllowed(msg.sender, token, recipient, maxAmount, allowedTimestamp);
+        emit TokenTransferAllowed(msg.sender, token, recipient, amount, activeFrom);
     }
 
     /**
@@ -683,16 +682,15 @@ contract Fiducia is ITransactionGuard, IModuleGuard {
         }
 
         // Check for token transfer allowances first
-        if (selector == IERC20.transfer.selector && data.length > 67) {
+        if (selector == IERC20.transfer.selector && operation == Enum.Operation.Call && data.length > 67) {
             (address recipient, uint256 amount) = abi.decode(data[4:], (address, uint256));
-            bytes32 tokenIdentifier = keccak256(abi.encode(to, recipient, selector, operation));
-            TokenTransferInfo memory tokenTransferInfo = allowedTokenTransferInfos[safe][tokenIdentifier];
+            TokenTransferInfo memory tokenTransferInfo = allowedTokenTransferInfos[safe][to][recipient];
 
-            if (tokenTransferInfo.maxAmount > 0) {
+            if (tokenTransferInfo.amount > 0) {
                 if (tokenTransferInfo.activeFrom == 0 || tokenTransferInfo.activeFrom > block.timestamp) {
                     return (false, "Token transfer not yet active");
                 }
-                if (amount > tokenTransferInfo.maxAmount) {
+                if (amount > tokenTransferInfo.amount) {
                     return (false, "Token transfer exceeds limit");
                 }
                 return (true, "");
