@@ -1,4 +1,4 @@
-name: CI
+name: Contract Compiling, Testing, and Formatting
 
 on:
   push:
