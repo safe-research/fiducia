@@ -1,7 +1,9 @@
-# Fiducia 🛡️
+# Fiducia
 
 > [!WARNING]  
 > Code in this repository is not audited and may contain serious security holes. Use at your own risk.
+
+![Fiducia](./fiducia-app/public/fiducia.svg)
 
 Fiducia is a comprehensive Safe transaction guard that adds enhanced security controls through time delays and cosigner requirements. It enforces stricter transaction validation while providing flexible permission management for Safe multisig wallets.
 

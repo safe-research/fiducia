@@ -533,7 +533,7 @@ function App() {
     <>
       <div>
         <a href="https://github.com/safe-research/fiducia" target="_blank">
-          <img src={'./vite.svg'} className="logo" alt="Fiducia logo" />
+          <img src={'./fiducia.svg'} className="logo" alt="Fiducia logo" />
         </a>
       </div>
       <h1>Fiducia</h1>

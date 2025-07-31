@@ -1,10 +1,10 @@
 {
   "name": "Fiducia",
   "description": "A Safe app to delay new transactions unless confirmed by a trusted cosigner.",
-  "iconPath": "vite.svg",
+  "iconPath": "fiducia.svg",
   "icons": [
     {
-      "src": "vite.svg",
+      "src": "fiducia.svg",
       "sizes": "256x256",
       "type": "image/svg+xml"
     }
