@@ -14,6 +14,6 @@ base_sepolia = "${BASE_SEPOLIA_RPC}"
 xdai = "${GNOSIS_CHAIN_RPC}"
 
 [etherscan]
-sepolia = { key = "${ETHERSCAN_MULTICHAIN_KEY}", url = "https://api.etherscan.io/v2/api?chainid=11155111" }
+sepolia = { key = "${ETHERSCAN_MULTICHAIN_KEY}" }
 base_sepolia = { key = "${BASESCAN_API_KEY}", url = "https://api-sepolia.basescan.org/api" }
-xdai = { key = "${ETHERSCAN_MULTICHAIN_KEY}", url = "https://api.etherscan.io/v2/api?chainid=100" }
+xdai = { key = "${ETHERSCAN_MULTICHAIN_KEY}" }
