@@ -13,12 +13,12 @@ import { ethers } from 'ethers'
 
 /** Fiducia contract address on Sepolia testnet */
 export const FIDUCIA_ADDRESS_SEPOLIA = ethers.getAddress(
-  '0x016a4389ac2c9c2468f98f598e1129a697207312'
+  '0x4851a87b4ce998901f35b03f52b6954981e68245'
 )
 
 /** Fiducia contract address on Gnosis Chain */
 export const FIDUCIA_ADDRESS_GNOSIS = ethers.getAddress(
-  '0x016a4389ac2c9c2468f98f598e1129a697207312'
+  '0x4851a87b4ce998901f35b03f52b6954981e68245'
 )
 
 /** Safe MultiSendCallOnly contract address */
