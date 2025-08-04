@@ -162,7 +162,7 @@ function App() {
             to: txInfo.to,
             selector: txInfo.selector == '0x00000000' ? '' : txInfo.selector,
             operation: txInfo.operation == 0 ? 'Call' : 'Delegate Call',
-            allowedTimestamp: timestampInfo * MILLISECONDS_IN_SECOND,
+            activeFrom: timestampInfo * MILLISECONDS_IN_SECOND,
           }
         })
       )
@@ -212,7 +212,7 @@ function App() {
       // Then, get amount & timestamp info using the token & recipient info
       const allowedTokenTxs = await Promise.all(
         tokenInfos.map(async tokenInfo => {
-          const result = await call(
+          const amountAndTimestamp = await call(
             sdk,
             fiduciaAddress,
             'allowedTokenTransferInfos',
@@ -223,11 +223,13 @@ function App() {
             ]
           )
 
+          const decimal = await call(sdk, tokenInfo.token, 'decimals', [])
+
           return {
             token: tokenInfo.token,
             recipient: tokenInfo.recipient,
-            amount: result.amount,
-            activeFrom: result.activeFrom * MILLISECONDS_IN_SECOND,
+            amount: amountAndTimestamp.amount / 10n ** decimal,
+            activeFrom: amountAndTimestamp.activeFrom * MILLISECONDS_IN_SECOND,
           }
         })
       )

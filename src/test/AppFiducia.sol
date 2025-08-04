@@ -115,19 +115,6 @@ contract AppFiducia is Fiducia {
     }
 
     /**
-     * @dev Decodes the cosigner signature from the provided signatures.
-     * @return The decoded cosigner signature.
-     * @dev This function is used to be compatible with the Varangian cosigner.
-     */
-    function _decodeCosignerSignature(bytes calldata signatures) internal pure override returns (bytes calldata) {
-        if (signatures.length < 66) {
-            return _emptyContext();
-        }
-
-        return signatures[signatures.length - 65:];
-    }
-
-    /**
      * @notice This function is called after the execution of a transaction to check if the guard is set up correctly.
      * @dev This function only checks the Tx Guard and not the Module Guard. This is done for v1.4.1 Wallet Interface compatibility.
      */
