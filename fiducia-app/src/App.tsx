@@ -533,6 +533,12 @@ function App() {
 
   return (
     <>
+      <div className="card">
+        <Alert severity="warning">
+          This demo is an experimental beta release. Code is not audited. Use at
+          your own risk.
+        </Alert>
+      </div>
       <div>
         <a href="https://github.com/safe-research/fiducia" target="_blank">
           <img src={'./fiducia.svg'} className="logo" alt="Fiducia logo" />
