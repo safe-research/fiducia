@@ -39,6 +39,10 @@ import {
   isValidOperation,
 } from './utils/validation'
 import { useSafeConnection } from './hooks/useSafeConnection'
+import {
+  SafeResearchBanner,
+  SafeResearchFooter,
+} from './components/SafeResearch'
 
 const CONTRACT_INTERFACE = new ethers.Interface(CONTRACT_INTERFACE_ABI)
 
@@ -533,12 +537,7 @@ function App() {
 
   return (
     <>
-      <div className="card">
-        <Alert severity="warning">
-          This demo is an experimental beta release. Code is not audited. Use at
-          your own risk.
-        </Alert>
-      </div>
+      <SafeResearchBanner />
       <div>
         <a href="https://github.com/safe-research/fiducia" target="_blank">
           <img src={'./fiducia.svg'} className="logo" alt="Fiducia logo" />
@@ -1125,6 +1124,7 @@ function App() {
         )}
         {errorMessage ? <p className="error">{errorMessage}</p> : null}
       </div>
+      <SafeResearchFooter repo="fiducia" />
     </>
   )
 }
